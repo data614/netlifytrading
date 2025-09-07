@@ -6,6 +6,25 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# ✅ Secrets scanning configuration
+[secrets_scan]
+  enabled = true
+  # Keys your repo/code/tools might contain that should never be in client bundles
+  omit_keys = [
+    "MARKETSTACK_KEY",
+    "EMAILJS_PRIVATE_KEY",
+    "EMAILJS_API_KEY",
+    "REACT_APP_API_KEY",
+    "REACT_APP_MARKETSTACK_KEY"
+  ]
+  # Paths that are safe to ignore (examples)
+  omit_paths = [
+    ".env",
+    ".env.*",
+    ".env.example"
+  ]
+
+# SPA + Functions routing
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
