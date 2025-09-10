@@ -181,8 +181,12 @@ async function loadTimeframe(tf) {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-         y: { min:min, max:max, grid:{ color:'rgba(255,255,255,.08)' }, ticks:{ color:'#cfd3da' } },
-        
+          y: {
+          min: yMin,
+          max: yMax,
+          grid: { color: 'rgba(255,255,255,.08)' },
+          ticks: { color: '#cfd3da' },
+        },
         x: {
           grid: { color: 'rgba(255,255,255,.06)' },
           ticks: { color: '#cfd3da', maxTicksLimit: 10 },
