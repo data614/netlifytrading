@@ -142,7 +142,11 @@ async function loadTimeframe(tf) {
       clean.values.push(v);
     }
   });
-
+  const minPrice = clean.values.length ? Math.min(...clean.values) : 0;
+  const maxPrice = clean.values.length ? Math.max(...clean.values) : 1;
+  const padding = (maxPrice - minPrice) * 0.1;
+  const yMin = Math.max(minPrice - padding, 0);
+  const yMax = maxPrice + padding;
   const sma20 = sma(clean.values, Math.min(20, clean.values.length));
 
   if (priceChart) priceChart.destroy();
