@@ -56,9 +56,6 @@ A Netlify Function `sendEmail.js` is included to send emails via EmailJS using t
 }
 ```
 
-### Required Environment Variables (Netlify)
-- `EMAILJS_PRIVATE_KEY`  ← from EmailJS **Private Key**
-- `EMAILJS_SERVICE_ID`   ← e.g. `service_ox7ozaj`
-- `EMAILJS_TEMPLATE_ID`  ← e.g. `template_pi1pptd`
+
 
 You can also override `service_id` and `template_id` by passing them in the request body.
