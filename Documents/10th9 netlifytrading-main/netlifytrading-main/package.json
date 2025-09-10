@@ -1,0 +1,9 @@
+{
+  "name": "netlifytrading",
+  "private": true,
+  "scripts": {
+    "build": "mkdir -p build/netlify/functions && cp index.html app.js style.css _redirects build/ && cp -r netlify/functions build/netlify/functions",
+    "start": "npx netlify-cli@latest dev"
+  },
+  "devDependencies": {}
+}
