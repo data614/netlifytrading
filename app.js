@@ -145,6 +145,13 @@ async function loadTimeframe(tf) {
 
   const sma20 = sma(clean.values, Math.min(20, clean.values.length));
 
+  // determine chart bounds with a little padding
+  const minPrice = clean.values.length ? Math.min(...clean.values) : 0;
+  const maxPrice = clean.values.length ? Math.max(...clean.values) : 1;
+  const padding = (maxPrice - minPrice) * 0.1;
+  const yMin = Math.max(minPrice - padding, 0);
+  const yMax = maxPrice + padding;
+
   if (priceChart) priceChart.destroy();
   priceChart = new Chart($id('stockChart'), {
     type: 'line',
@@ -178,8 +185,8 @@ async function loadTimeframe(tf) {
       maintainAspectRatio: false,
       scales: {
         y: {
-          // ✅ Fix: always start Y-axis at zero
-          beginAtZero: true,
+          min: yMin,
+          max: yMax,
           grid: { color: 'rgba(255,255,255,.08)' },
           ticks: { color: '#cfd3da' },
         },
