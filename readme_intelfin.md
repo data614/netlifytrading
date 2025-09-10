@@ -238,7 +238,7 @@ You can open it directly in a browser, or copy parts into your project.
 <script>
 // ===== Config =====
 // FIXED: Removed a trailing newline character from the key string. This was causing all API requests to fail.
-const DEFAULT_KEY = 'c992d284d13ef17837474c8ed11185b1';  // override with ?ms_key= or localStorage
+const DEFAULT_KEY = 'YOUR_MARKETSTACK_API_KEY';  // override with ?ms_key= or localStorage
 const qsKey = new URLSearchParams(location.search).get('ms_key');
 const API_KEY = qsKey || localStorage.getItem('ms_key') || DEFAULT_KEY;
 const BASE = 'https://api.marketstack.com/v1';
