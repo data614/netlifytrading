@@ -39,9 +39,8 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-se
 .tf{display:flex;gap:6px;flex-wrap:wrap}
 .tf button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
 .tf button.active{background:rgba(52,152,219,.25);border-color:var(--accent-blue)}
-.exchange-filter{display:flex;gap:6px;flex-wrap:wrap}
-.exchange-filter button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:12px}
-.exchange-filter button.active{background:rgba(46,204,113,.2);border-color:var(--accent-green)}
+.exchange-filter{display:flex}
+.exchange-filter select{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:6px 10px;border-radius:8px;font-size:12px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;word-break:break-all}
 .muted{color:var(--text-secondary)}
 #loading{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;font-size:18px}
