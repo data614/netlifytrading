@@ -9,19 +9,22 @@
 # ✅ Secrets scanning configuration
 [secrets_scan]
   enabled = true
-  # Keys your repo/code/tools might contain that should never be in client bundles
   omit_keys = [
-    "MARKETSTACK_KEY",
     "EMAILJS_PRIVATE_KEY",
-    "EMAILJS_API_KEY",
+    "EMAILJS_SERVICE_ID",
+    "EMAILJS_TEMPLATE_ID",
+    "KV_TOKEN",
+    "KV_URL",
+    "MARKETSTACK_KEY",
     "REACT_APP_API_KEY",
     "REACT_APP_MARKETSTACK_KEY"
   ]
-  # Paths that are safe to ignore (examples)
   omit_paths = [
     ".env",
     ".env.*",
-    ".env.example"
+    ".env.example",
+    "scripts/local/*",
+    "tests/fixtures/*"
   ]
 
 # SPA + Functions routing
