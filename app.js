@@ -26,13 +26,11 @@ const fmtVol = (v) => {
 const sma = (arr, p) => {
   const out = [];
   for (let i = 0; i < arr.length; i++) {
-    if (i < p - 1) {
-      out.push(null);
-      continue;
-    }
-    let s = 0;
-    for (let j = i - p + 1; j <= i; j++) s += arr[j];
-    out.push(s / p);
+     const start = Math.max(0, i - p + 1);
+    const window = arr.slice(start, i + 1);
+    const sum = window.reduce((a, b) => a + b, 0);
+    out.push(sum / window.length);
+
   }
   return out;
 };
@@ -348,11 +346,8 @@ searchResultsContainer.addEventListener('click', (e) => {
 });
 
 /* ----------------------------- Filters (EX) ---------------------------- */
-$id('exchangeFilters').addEventListener('click', (e) => {
-  if (e.target.tagName !== 'BUTTON') return;
-  document.querySelectorAll('#exchangeFilters button').forEach((b) => b.classList.remove('active'));
-  e.target.classList.add('active');
-  selectedExchange = e.target.dataset.exchange || '';
+$id('exchangeFilters').addEventListener('change', (e) => {
+  selectedExchange = e.target.value || '';
   // re-run current search
   const ev = new Event('input', { bubbles: true });
   searchInput.dispatchEvent(ev);
