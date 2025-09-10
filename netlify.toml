@@ -24,7 +24,8 @@
     ".env.*",
     ".env.example",
     "scripts/local/*",
-    "tests/fixtures/*"
+    "tests/fixtures/*",
+    "README.md" # TEMP: remove once README is redacted
   ]
 
 # SPA + Functions routing
