@@ -1,4 +1,50 @@
-
-# Ignore environment variable files
+# Environment files
 .env
 .env.*
+!.env.example
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+build/
+dist/
+.cache/
+.tmp/
+
+# Netlify
+.netlify/
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# OS / System junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Windows user folders (safety)
+AppData/
+Documents/
+Music/
+Pictures/
+Videos/
+Downloads/
+Contacts/
+Favorites/
+Links/
+Saved Games/
+Searches/
+OneDrive/
+
+# Logs
+*.log
+
+# Misc
+*.swp
+*.swo
