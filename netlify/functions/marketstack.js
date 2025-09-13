@@ -1,4 +1,4 @@
-const corsHeaders = { 'access-control-allow-origin': '*' };
+const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 
 function generateMockData(days = 30) {
   const today = new Date();
