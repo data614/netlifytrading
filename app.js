@@ -201,6 +201,14 @@ async function loadTimeframe(tf) {
   });
 }
 
+// allow users to switch chart timeframes via the UI controls
+$id('tfControls').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (btn && btn.dataset.tf) {
+    loadTimeframe(btn.dataset.tf);
+  }
+});
+
 /* ---------------------------- 52-Week Stats --------------------------- */
 async function load52w() {
   const data = await fx('marketstack', {
