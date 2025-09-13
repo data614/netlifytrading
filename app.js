@@ -7,7 +7,8 @@
 
 /* -------------------------- Utilities & State -------------------------- */
 const $id = (id) => document.getElementById(id);
-const showLoading = (on) => ($id('loading').style.display = on ? 'flex' : 'none');
+// remove refresh animation overlay for smoother UX
+const showLoading = () => {};
 const showError = (msg) => {
   const box = $id('error');
   box.textContent = msg;
@@ -195,10 +196,18 @@ async function loadTimeframe(tf) {
         legend: { labels: { color: '#cfd3da' } },
         tooltip: { mode: 'index', intersect: false },
       },
-      animation: { duration: 600, easing: 'easeOutQuart' },
+      animation: false,
     },
   });
 }
+
+// allow users to switch chart timeframes via the UI controls
+$id('tfControls').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (btn && btn.dataset.tf) {
+    loadTimeframe(btn.dataset.tf);
+  }
+});
 
 /* ---------------------------- 52-Week Stats --------------------------- */
 async function load52w() {
@@ -378,7 +387,8 @@ function loadNews(source = 'All') {
   articles.forEach((a) => {
     const d = document.createElement('div');
     d.className = 'news-item';
-    d.innerHTML = `<a href="#" target="_blank">${a.title}</a><small>${a.time} — ${a.source}</small>`;
+    const gLink = `https://www.google.com/search?q=${encodeURIComponent(a.title)}&tbm=nws`;
+    d.innerHTML = `<a href="${gLink}" target="_blank">${a.title}</a><small>${a.time} — ${a.source}</small>`;
     feed.appendChild(d);
   });
 }
