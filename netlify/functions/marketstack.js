@@ -67,6 +67,6 @@ export default async (request) => {
     }));
     return Response.json({ symbol, data: rows }, { headers: corsHeaders });
   } catch (e) {
-    return sendMock({ error: 'marketstack failed', detail: String(e) });
+    return Response.json({ symbol, data: generateMockData(), error: 'marketstack failed', detail: String(e) }, { headers: corsHeaders, status: 500 });
   }
 };
