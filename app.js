@@ -47,7 +47,8 @@ let watchlist = JSON.parse(localStorage.getItem('stockWatchlistV2') || '[]');
 /* ---------------------------- Fetch via FX ----------------------------- */
 async function fx(path, params = {}) {
   const qs = new URLSearchParams(params).toString();
-  const url = `/api/${path}${qs ? `?${qs}` : ''}`;
+  const base = path.startsWith('http') ? path : `/api/${path}`;
+  const url = `${base}${qs ? `?${qs}` : ''}`;
   showLoading(true);
   try {
     const r = await fetch(url);
