@@ -258,7 +258,7 @@ function renderWatchlist() {
     el.appendChild(row);
   });
   // refresh quotes for all
-  watchlist.forEach((it) => refreshWatch(it.symbol, it.exchange));
+  refreshWatchlist();
 }
 function addToWatchlist(symbol, exchange, name) {
   if (!symbol) return;
@@ -287,33 +287,31 @@ $id('watchlist').addEventListener('click', (e) => {
   }
 });
 
-async function refreshWatch(sym, ex) {
-  let q = null;
+async function refreshWatchlist() {
+  if (!watchlist.length) return;
+  const symbols = watchlist.map((it) => it.symbol).join(',');
+  let payload = null;
   try {
-    q =
-      (await fx('marketstack', {
-        symbol: sym,
-        exchange: ex,
-        kind: 'intraday_latest',
-      }))?.data?.[0] || null;
+    payload = await fx('marketstack', { symbol: symbols, kind: 'intraday_latest' });
   } catch (_) {}
-  if (!q) {
-    q =
-      (await fx('marketstack', {
-        symbol: sym,
-        exchange: ex,
-        kind: 'eod_latest',
-      }))?.data?.[0] || null;
+  if (!payload || !(payload.data && payload.data.length)) {
+    payload = await fx('marketstack', { symbol: symbols, kind: 'eod_latest' });
   }
-  if (!q) return;
+  const rows = payload.data || [];
+  const map = {};
+  rows.forEach((r) => (map[r.symbol] = r));
 
-  const price = q.close ?? q.last ?? q.price;
-  const open = q.open ?? price;
-  const pct = open ? ((price - open) / open) * 100 : 0;
-  $id(`wp-${sym}`).textContent = fmtMoney(price);
-  const ce = $id(`wc-${sym}`);
-  ce.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% ${ex ? '(' + ex + ')' : ''}`;
-  ce.style.color = pct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+  watchlist.forEach((it) => {
+    const q = map[it.symbol];
+    if (!q) return;
+    const price = q.close ?? q.last ?? q.price;
+    const open = q.open ?? price;
+    const pct = open ? ((price - open) / open) * 100 : 0;
+    $id(`wp-${it.symbol}`).textContent = fmtMoney(price);
+    const ce = $id(`wc-${it.symbol}`);
+    ce.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% ${it.exchange ? '(' + it.exchange + ')' : ''}`;
+    ce.style.color = pct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+  });
 }
 
 /* -------------------------------- Search ------------------------------ */
@@ -458,7 +456,7 @@ function bootstrap() {
     if (currentSymbol) {
       loadQuote();
       renderMovers();
-      watchlist.forEach((it) => refreshWatch(it.symbol, it.exchange));
+      refreshWatchlist();
     }
   }, 60 * 1000);
   pingBackend();
@@ -475,31 +473,27 @@ async function renderMovers() {
     : [{ symbol: 'AAPL' }, { symbol: 'MSFT' }, { symbol: 'NVDA' }, { symbol: 'AMZN' }, { symbol: 'GOOGL' }, { symbol: 'TSLA' }]
   ).slice(0, 20);
 
+  const symbols = universe.map((it) => it.symbol).join(',');
+  let payload = null;
+  try {
+    payload = await fx('marketstack', { symbol: symbols, kind: 'intraday_latest' });
+  } catch (_) {}
+  if (!payload || !(payload.data && payload.data.length)) {
+    payload = await fx('marketstack', { symbol: symbols, kind: 'eod_latest' });
+  }
   const stats = [];
-  for (const it of universe) {
-    let q = null;
-    try {
-      q =
-        (await fx('marketstack', {
-          symbol: it.symbol,
-          exchange: it.exchange || '',
-          kind: 'intraday_latest',
-        }))?.data?.[0] || null;
-    } catch (_) {}
-    if (!q) {
-      q =
-        (await fx('marketstack', {
-          symbol: it.symbol,
-          exchange: it.exchange || '',
-          kind: 'eod_latest',
-        }))?.data?.[0] || null;
-    }
-    if (!q) continue;
+  const rows = payload.data || [];
+  const map = {};
+  rows.forEach((r) => (map[r.symbol] = r));
+
+  universe.forEach((it) => {
+    const q = map[it.symbol];
+    if (!q) return;
     const price = q.close ?? q.last ?? q.price;
     const open = q.open ?? price;
     const pct = open ? ((price - open) / open) * 100 : 0;
     stats.push({ symbol: it.symbol, ex: q.exchange || it.exchange || '', price, pct });
-  }
+  });
 
   stats.sort((a, b) => b.pct - a.pct);
   stats.forEach((r) => {
