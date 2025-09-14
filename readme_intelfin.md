@@ -241,7 +241,7 @@ You can open it directly in a browser, or copy parts into your project.
 const DEFAULT_KEY = 'YOUR_MARKETSTACK_API_KEY';  // override with ?ms_key= or localStorage
 const qsKey = new URLSearchParams(location.search).get('ms_key');
 const API_KEY = qsKey || localStorage.getItem('ms_key') || DEFAULT_KEY;
-const BASE = 'https://api.marketstack.com/v1';
+const BASE = 'https://api.marketstack.com/v2';
 document.getElementById('apiKeyEcho').textContent = 'API: ' + API_KEY.replace(/.(?=.{4})/g, '•');
 
 // ===== Utils =====

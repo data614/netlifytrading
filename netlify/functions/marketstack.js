@@ -32,6 +32,7 @@ export default async (request) => {
   const interval = url.searchParams.get('interval') || '';
   const limit = url.searchParams.get('limit') || '30';
   const exchange = url.searchParams.get('exchange') || '';
+  const afterHours = url.searchParams.get('after_hours') || '';
 
   const sendMock = (extra = {}) =>
     Response.json(
@@ -56,10 +57,15 @@ export default async (request) => {
     // use API v2 endpoints
     const api = new URL(`https://api.marketstack.com/v2/${base}`);
     api.searchParams.set('access_key', key);
-    api.searchParams.set('symbols', symbol);
+    const symbolsParam = symbol
+      .split(',')
+      .map((s) => s.trim().replace(/\./g, '-'))
+      .join(',');
+    api.searchParams.set('symbols', symbolsParam);
     if (interval) api.searchParams.set('interval', interval);
     if (limit) api.searchParams.set('limit', limit);
     if (exchange) api.searchParams.set('exchange', exchange);
+    if (afterHours) api.searchParams.set('after_hours', afterHours);
     const resp = await fetch(api);
     const body = await resp.json();
     if (!resp.ok || body.error || !Array.isArray(body.data) || body.data.length === 0) {
@@ -80,7 +86,7 @@ export default async (request) => {
     const rows = body.data.map((r) => {
       const rate = rates[r.currency] || 1;
       return {
-        symbol: r.symbol,
+        symbol: r.symbol.replace(/-/g, '.'),
         date: r.date,
         exchange: r.exchange,
         open: r.open != null ? r.open * rate : null,
