@@ -25,14 +25,14 @@ export default async (request) => {
 
   try {
     const key = process.env.MARKETSTACK_KEY || process.env.REACT_APP_MARKETSTACK_KEY;
-    const api = new URL('http://api.marketstack.com/v1/tickers');
+    const api = new URL('https://api.marketstack.com/v2/tickers');
     api.searchParams.set('access_key', key);
-    api.searchParams.set('search', q);
+    api.searchParams.set('search', q.replace(/\./g, '-'));
     api.searchParams.set('limit', '10');
     const resp = await fetch(api);
     const body = await resp.json();
     const all = (body.data || []).map((x) => ({
-      symbol: x.symbol,
+      symbol: (x.symbol || '').replace(/-/g, '.'),
       name: x.name,
       exchange: x.stock_exchange?.acronym || '',
       mic: x.stock_exchange?.mic || '',
