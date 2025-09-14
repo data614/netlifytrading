@@ -32,7 +32,7 @@ export default async (request) => {
     const resp = await fetch(api);
     const body = await resp.json();
     const all = (body.data || []).map((x) => ({
-      symbol: x.symbol.replace(/-/g, '.'),
+      symbol: (x.symbol || '').replace(/-/g, '.'),
       name: x.name,
       exchange: x.stock_exchange?.acronym || '',
       mic: x.stock_exchange?.mic || '',
