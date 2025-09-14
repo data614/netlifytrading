@@ -86,7 +86,7 @@ export default async (request) => {
     const rows = body.data.map((r) => {
       const rate = rates[r.currency] || 1;
       return {
-        symbol: r.symbol.replace(/-/g, '.'),
+        symbol: (r.symbol || '').replace(/-/g, '.'),
         date: r.date,
         exchange: r.exchange,
         open: r.open != null ? r.open * rate : null,
