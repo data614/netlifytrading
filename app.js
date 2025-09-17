@@ -44,6 +44,7 @@ let currentName = '';
 let priceChart = null;
 let selectedExchange = ''; // search filter
 let watchlist = JSON.parse(localStorage.getItem('stockWatchlistV2') || '[]');
+let latestWatchlistQuotes = {};
 
 /* ---------------------------- Fetch via FX ----------------------------- */
 async function fx(path, params = {}) {
@@ -288,7 +289,10 @@ $id('watchlist').addEventListener('click', (e) => {
 });
 
 async function refreshWatchlist() {
-  if (!watchlist.length) return;
+  if (!watchlist.length) {
+    latestWatchlistQuotes = {};
+    return {};
+  }
   const symbols = watchlist.map((it) => it.symbol).join(',');
   let payload = null;
   try {
@@ -301,6 +305,8 @@ async function refreshWatchlist() {
   const map = {};
   rows.forEach((r) => (map[r.symbol] = r));
 
+  latestWatchlistQuotes = map;
+
   watchlist.forEach((it) => {
     const q = map[it.symbol];
     if (!q) return;
@@ -312,6 +318,7 @@ async function refreshWatchlist() {
     ce.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% ${it.exchange ? '(' + it.exchange + ')' : ''}`;
     ce.style.color = pct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
   });
+  return map;
 }
 
 /* -------------------------------- Search ------------------------------ */
@@ -416,6 +423,167 @@ function loadProfile() {
   }
 }
 
+const sendSummaryBtn = $id('sendSummaryBtn');
+const sendSummaryStatus = $id('sendSummaryStatus');
+let emailFeatureReady = false;
+
+function setEmailStatus(message, state = 'info') {
+  if (!sendSummaryStatus) return;
+  sendSummaryStatus.textContent = message || '';
+  sendSummaryStatus.className = state && state !== 'info' ? `status-msg ${state}` : 'status-msg';
+}
+
+function buildWatchlistEmailPayload() {
+  const storedProfile = JSON.parse(localStorage.getItem('userProfile') || 'null');
+  const name = (storedProfile?.name || '').trim();
+  const email = (storedProfile?.email || '').trim();
+  if (!email) {
+    throw new Error('Save your name and email in the profile section before sending a summary.');
+  }
+  if (!watchlist.length) {
+    throw new Error('Your watchlist is empty. Add at least one symbol before emailing a summary.');
+  }
+
+  const summaryData = watchlist.map((item) => {
+    const quote = latestWatchlistQuotes[item.symbol];
+    const label = `${item.symbol}${item.name ? ` — ${item.name}` : ''}`;
+    if (!quote) {
+      return { symbol: item.symbol, hasQuote: false, line: `${label}: quote unavailable` };
+    }
+    const price = Number(quote.close ?? quote.last ?? quote.price);
+    const open = Number(quote.open ?? price);
+    if (!Number.isFinite(price)) {
+      return { symbol: item.symbol, hasQuote: false, line: `${label}: quote unavailable` };
+    }
+    const pct = Number.isFinite(open) && open !== 0 ? ((price - open) / open) * 100 : null;
+    const pctText = pct == null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+    return {
+      symbol: item.symbol,
+      hasQuote: true,
+      line: `${label}: ${fmtMoney(price)} (${pctText})`,
+    };
+  });
+
+  const hasLiveQuote = summaryData.some((row) => row.hasQuote);
+  if (!hasLiveQuote) {
+    throw new Error('Live pricing is still loading. Refresh the watchlist and try again.');
+  }
+
+  const summaryLines = summaryData.map((row) => row.line);
+  const bulletLines = summaryLines.map((line) => `• ${line}`).join('\n');
+  const timestamp = new Date();
+  const subjectDate = timestamp.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const subject = `Watchlist summary — ${subjectDate}`;
+  const greetingName = name || 'there';
+  const message = [
+    `Hi ${greetingName},`,
+    '',
+    'Here is the latest snapshot of your watchlist:',
+    '',
+    bulletLines,
+    '',
+    `Generated at ${timestamp.toLocaleString()}.`,
+    '',
+    '— Netlify Trading Desk',
+  ].join('\n');
+
+  return {
+    template_params: {
+      to_name: name || email,
+      to_email: email,
+      subject,
+      message,
+      summary_text: summaryLines.join('\n'),
+      generated_at: timestamp.toISOString(),
+      watchlist_count: summaryLines.length,
+    },
+  };
+}
+
+async function sendWatchlistSummary() {
+  if (!sendSummaryBtn) return;
+  if (!emailFeatureReady) {
+    setEmailStatus(
+      'Email delivery is disabled. Add EmailJS keys in your Netlify environment to enable summaries.',
+      'error'
+    );
+    return;
+  }
+
+  if (!Object.keys(latestWatchlistQuotes).length && watchlist.length) {
+    try {
+      await refreshWatchlist();
+    } catch (err) {
+      console.warn('Unable to refresh watchlist before sending summary:', err);
+    }
+  }
+
+  let payload;
+  try {
+    payload = buildWatchlistEmailPayload();
+  } catch (err) {
+    setEmailStatus(err.message, 'error');
+    return;
+  }
+
+  try {
+    setEmailStatus('Sending summary…');
+    sendSummaryBtn.disabled = true;
+    const res = await fetch('/api/sendEmail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) {
+      const detail = data?.details ? ` (${data.details})` : '';
+      const message = data?.error ? `${data.error}${detail}` : `Request failed${detail}`;
+      throw new Error(message);
+    }
+    const toEmail = payload.template_params?.to_email || 'your inbox';
+    setEmailStatus(`Summary sent to ${toEmail}!`, 'success');
+  } catch (err) {
+    setEmailStatus(`Failed to send summary: ${err.message}`, 'error');
+  } finally {
+    sendSummaryBtn.disabled = !emailFeatureReady;
+  }
+}
+
+async function initEmailFeature() {
+  if (!sendSummaryBtn) return;
+  try {
+    const res = await fetch('/api/env-check');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    const env = payload?.env || {};
+    const ready = !!(env.EMAILJS_PRIVATE_KEY && env.EMAILJS_SERVICE_ID && env.EMAILJS_TEMPLATE_ID);
+    emailFeatureReady = ready;
+    sendSummaryBtn.disabled = !ready;
+    if (!ready) {
+      setEmailStatus(
+        'Email delivery is disabled. Add EmailJS keys (EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PRIVATE_KEY) in your Netlify environment to enable summaries.',
+        'error'
+      );
+    } else {
+      setEmailStatus('', 'info');
+    }
+  } catch (err) {
+    emailFeatureReady = false;
+    if (sendSummaryBtn) sendSummaryBtn.disabled = true;
+    setEmailStatus('Unable to verify email service configuration. Try again later.', 'error');
+    console.warn('Email summary setup failed:', err);
+  }
+}
+
+if (sendSummaryBtn) {
+  sendSummaryBtn.disabled = true;
+  sendSummaryBtn.addEventListener('click', sendWatchlistSummary);
+}
+
 /* ----------------------------- Load Symbol ---------------------------- */
 async function loadSymbol(sym, exchange = '', knownName = '') {
   $id('error').style.display = 'none';
@@ -445,6 +613,7 @@ function bootstrap() {
   renderWatchlist();
   loadProfile();
   loadNews('All');
+  initEmailFeature();
   if (watchlist.length) {
     const f = watchlist[0];
     loadSymbol(f.symbol, f.exchange || '', f.name || '');
