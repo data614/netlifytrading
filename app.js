@@ -7,8 +7,36 @@
 
 /* -------------------------- Utilities & State -------------------------- */
 const $id = (id) => document.getElementById(id);
+const loadingEl = $id('loading');
+const LOADING_DELAY_MS = 150;
+let loadingCounter = 0;
+let loadingTimer = null;
 // remove refresh animation overlay for smoother UX
-const showLoading = () => {};
+const showLoading = (show) => {
+  if (!loadingEl) return;
+  const shouldShow = Boolean(show);
+
+  if (shouldShow) {
+    loadingCounter += 1;
+    if (loadingCounter === 1) {
+      if (loadingTimer) clearTimeout(loadingTimer);
+      loadingTimer = setTimeout(() => {
+        loadingEl.style.display = 'flex';
+        loadingTimer = null;
+      }, LOADING_DELAY_MS);
+    }
+    return;
+  }
+
+  if (loadingCounter > 0) loadingCounter -= 1;
+  if (loadingCounter === 0) {
+    if (loadingTimer) {
+      clearTimeout(loadingTimer);
+      loadingTimer = null;
+    }
+    loadingEl.style.display = 'none';
+  }
+};
 const showError = (msg) => {
   const box = $id('error');
   box.textContent = msg;
