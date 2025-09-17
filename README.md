@@ -29,7 +29,10 @@ index 5cf3fddac59aec944ff73bf86ef77bb215db11fa..9879927a4c236c12d9856c679b91b3fa
  - Connect the repo/folder and set:
    - **Build command:** `npm run build`
    - **Publish directory:** `build`
- - (Optional) Add an environment variable **MARKETSTACK_KEY** to use live data.
-   Without a key, the app returns mock data so the UI still works.
- 
- ## Endpoints
+- (Optional) Add an environment variable **MARKETSTACK_KEY** to use live data.
+  Without a key, the app returns mock data so the UI still works.
+- (Optional) Add an environment variable **NEWS_API_KEY** (NewsAPI.org) so `/api/news`
+  can retrieve live headlines for the dashboard. Without it, cached mock
+  articles are returned.
+
+## Endpoints
