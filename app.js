@@ -52,6 +52,21 @@ const fmtVol = (v) => {
   if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
   return String(n);
 };
+const fmtNewsTime = (ts) => {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const diff = Math.max(Date.now() - d.getTime(), 0);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const month = 30 * day;
+  if (diff < minute) return 'Just now';
+  if (diff < hour) return `${Math.round(diff / minute)}m ago`;
+  if (diff < day) return `${Math.round(diff / hour)}h ago`;
+  if (diff < month) return `${Math.round(diff / day)}d ago`;
+  return d.toLocaleDateString();
+};
 const sma = (arr, p) => {
   const out = [];
   for (let i = 0; i < arr.length; i++) {
@@ -390,33 +405,87 @@ $id('exchangeFilters').addEventListener('change', (e) => {
 });
 
 /* -------------------------------- News -------------------------------- */
-const mockNews = {
-  Bloomberg: [
-    { title: 'Apple Intelligence to Redefine AI Landscape', source: 'Bloomberg', time: '1h ago' },
-    { title: 'NVIDIA Hits New High on AI Chip Demand', source: 'Bloomberg', time: '3h ago' },
-  ],
-  Reuters: [
-    { title: 'Microsoft Azure Cloud Sees Unprecedented Growth', source: 'Reuters', time: '2h ago' },
-    { title: 'Tesla Faces Stiff Competition in EV Market', source: 'Reuters', time: '5h ago' },
-  ],
-  Yahoo: [
-    { title: 'Is Amazon a Buy After Earnings Beat?', source: 'Yahoo Finance', time: '4h ago' },
-    { title: 'Alphabet Doubles Down on Quantum', source: 'Yahoo Finance', time: '6h ago' },
-  ],
-};
-function loadNews(source = 'All') {
+async function loadNews(source = 'All') {
   const feed = $id('news-feed');
-  feed.innerHTML = '';
-  let articles = source === 'All' ? Object.values(mockNews).flat() : mockNews[source] || [];
-  // simple ordering by "hours ago"
-  articles.sort((a, b) => parseInt(a.time) - parseInt(b.time));
-  articles.forEach((a) => {
-    const d = document.createElement('div');
-    d.className = 'news-item';
-    const gLink = `https://www.google.com/search?q=${encodeURIComponent(a.title)}&tbm=nws`;
-    d.innerHTML = `<a href="${gLink}" target="_blank">${a.title}</a><small>${a.time} — ${a.source}</small>`;
-    feed.appendChild(d);
-  });
+  feed.innerHTML = '<div class="news-item muted">Loading latest headlines…</div>';
+  try {
+    const resp = await fetch(`/api/news?source=${encodeURIComponent(source)}`);
+    if (!resp.ok) {
+      throw new Error(`${resp.status} ${resp.statusText || ''}`.trim());
+    }
+    const data = await resp.json();
+    const articles = Array.isArray(data.articles) ? data.articles : [];
+
+    feed.innerHTML = '';
+    if (data.fromCache) {
+      const notice = document.createElement('div');
+      notice.className = 'news-item muted';
+      notice.textContent = 'Showing cached headlines.';
+      feed.appendChild(notice);
+    }
+
+    if (!articles.length) {
+      const empty = document.createElement('div');
+      empty.className = 'news-item muted';
+      empty.textContent = 'No articles found for this source.';
+      feed.appendChild(empty);
+      if (data.error) {
+        showError(`News fallback in use — ${data.error}`);
+      }
+      return;
+    }
+
+    articles.forEach((article) => {
+      const item = document.createElement('div');
+      item.className = 'news-item';
+
+      const defaultUrl = `https://www.google.com/search?q=${encodeURIComponent(
+        article.title || ''
+      )}&tbm=nws`;
+      const href =
+        typeof article.url === 'string' && article.url.startsWith('http')
+          ? article.url
+          : defaultUrl;
+
+      const link = document.createElement('a');
+      link.href = href;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = article.title || 'Untitled article';
+      item.appendChild(link);
+
+      const timeLabel =
+        fmtNewsTime(article.publishedAt) ||
+        fmtNewsTime(article.time) ||
+        (article.time && typeof article.time === 'string' ? article.time : '');
+      const sourceLabel = typeof article.source === 'string' ? article.source : '';
+      const metaParts = [];
+      if (timeLabel) metaParts.push(timeLabel);
+      if (sourceLabel) metaParts.push(sourceLabel);
+      if (metaParts.length) {
+        const meta = document.createElement('small');
+        meta.textContent = metaParts.join(' — ');
+        item.appendChild(meta);
+      }
+
+      feed.appendChild(item);
+    });
+
+    if (data.error) {
+      showError(`News fallback in use — ${data.error}`);
+    }
+    if (data.warning) {
+      console.warn('News API warning:', data.warning);
+    }
+  } catch (error) {
+    console.error('loadNews error', error);
+    feed.innerHTML = '';
+    const err = document.createElement('div');
+    err.className = 'news-item muted';
+    err.textContent = 'Unable to load news right now.';
+    feed.appendChild(err);
+    showError(`News feed unavailable — ${error.message}`);
+  }
 }
 $id('newsApiButtons').addEventListener('click', (e) => {
   if (e.target.tagName !== 'BUTTON') return;
