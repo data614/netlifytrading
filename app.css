@@ -23,6 +23,8 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-se
 .stat-item-label{font-size:.8em;color:var(--text-secondary);margin-bottom:4px}
 .stat-item-value{font-size:1.05em;font-weight:600}
 .search-container input,.profile-form input{width:100%;padding:10px;background-color:var(--background-tertiary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:6px}
+#profileForm button{width:100%;margin-top:10px}
+#profileForm button:first-of-type{margin-top:0}
 #searchResults{margin-top:10px}
 .search-result-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;background:rgba(255,255,255,.03);margin-bottom:6px}
 .search-result-item button{background-color:var(--accent-blue);color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer}
@@ -46,4 +48,10 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-se
 #loading{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;font-size:18px}
 #error{display:none;background:rgba(231,76,60,.15);color:#ffc2bb;border:1px solid rgba(231,76,60,.4);padding:10px 12px;border-radius:10px;margin-bottom:10px}
 .btn-save{background:var(--accent-green);color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer}
+.btn-secondary{background-color:var(--background-tertiary);color:var(--text-primary);border:1px solid var(--border-color);padding:10px 14px;border-radius:8px;cursor:pointer;transition:background-color .2s ease,color .2s ease}
+.btn-secondary:hover:not(:disabled){background-color:rgba(255,255,255,.08)}
+.btn-secondary:disabled{opacity:.6;cursor:not-allowed}
 .ok-msg{color:var(--accent-green);margin-top:8px;font-size:.9em}
+.status-msg{margin-top:8px;font-size:.9em;min-height:1.2em;color:var(--text-secondary)}
+.status-msg.success{color:var(--accent-green)}
+.status-msg.error{color:var(--accent-red)}
