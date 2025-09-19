@@ -1,7 +1,7 @@
 # Netlify Trading — Fixed
 
 This is a minimal, working rebuild of your project with:
-- Clean `index.html`, `app.js`, `app.css`
+- Clean `index.html`, `app.js`, `app.css` (with `style.css` kept as a backup alias)
 - V2 Netlify Functions (`hello`, `env-check`, `search`, `marketstack`)
 - Redirects wired so `/api/*` proxies to `/.netlify/functions/:splat`
 
