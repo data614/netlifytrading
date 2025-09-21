@@ -59,6 +59,19 @@ const MIC_TO_TIINGO_PREFIX = {
   XIDX: 'IDX', XKLS: 'KLSE', XBKK: 'SET', XTAI: 'TWSE',
 };
 
+const REALTIME_US_MICS = new Set(['XNAS', 'XNYS', 'ARCX', 'BATS', 'IEXG', 'XASE']);
+
+const MIC_TO_CURRENCY = {
+  XNAS: 'USD', XNYS: 'USD', XASE: 'USD', ARCX: 'USD', BATS: 'USD', IEXG: 'USD',
+  XASX: 'AUD', XTSE: 'CAD', XTSX: 'CAD', XLON: 'GBP', XHKG: 'HKD',
+  XTKS: 'JPY', XSES: 'SGD', XNSE: 'INR', XBOM: 'INR',
+  XFRA: 'EUR', XETR: 'EUR', XSWX: 'CHF', XAMS: 'EUR', XBRU: 'EUR',
+  XMAD: 'EUR', XPAR: 'EUR', XMIL: 'EUR', XMEX: 'MXN', BVMF: 'BRL',
+  XJSE: 'ZAR', XKRX: 'KRW', XKOS: 'KRW', XSHG: 'CNY', XSHE: 'CNY',
+  XNZE: 'NZD', XOSL: 'NOK', XCSE: 'DKK', XSTO: 'SEK', XHEL: 'EUR',
+  XIDX: 'IDR', XKLS: 'MYR', XBKK: 'THB', XTAI: 'TWD',
+};
+
 const parseList = (v) => (v || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const normalizeMic = (v) => {
@@ -84,6 +97,32 @@ const buildTiingoTicker = (symbol, mic) => {
   if (upSymbol.includes(':')) return upSymbol;
   const prefix = tiingoPrefixForMic(mic);
   return prefix ? `${prefix}:${upSymbol}` : upSymbol;
+};
+
+const readCurrencyField = (row) => {
+  const candidates = [
+    row?.currency,
+    row?.currencyCode,
+    row?.currencyCodeIex,
+    row?.priceCurrency,
+    row?.quoteCurrency,
+    row?.tickerCurrency,
+    row?.fxCurrency,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) return trimmed.toUpperCase();
+    }
+  }
+  return '';
+};
+
+const inferCurrency = (row, mic) => {
+  const fromRow = row ? readCurrencyField(row) : '';
+  if (fromRow) return fromRow;
+  if (mic && MIC_TO_CURRENCY[mic]) return MIC_TO_CURRENCY[mic];
+  return 'USD';
 };
 
 function resolveSymbolRequests(symbolParam, exchangeParam) {
@@ -214,7 +253,7 @@ async function fetchTiingo(path, params, token) {
   return data;
 }
 
-const normalizeQuote = (row, fallbackSymbol) => {
+const normalizeQuote = (row, fallbackSymbol, fallbackMic) => {
   const symbol = (row?.ticker || row?.symbol || fallbackSymbol || '').toUpperCase();
   const price = toNumber(firstNonNull(row?.last, row?.tngoLast, row?.lastPrice, row?.mid));
   const fallbackClose = toNumber(firstNonNull(row?.close, row?.openPrice));
@@ -227,16 +266,17 @@ const normalizeQuote = (row, fallbackSymbol) => {
   const volume = toNumber(firstNonNull(row?.volume, row?.lastSize, row?.tngoLastSize));
   const timestamp = row?.timestamp || row?.lastSaleTimestamp || row?.quoteTimestamp ||
                     row?.tngoLastTime || row?.date || new Date().toISOString();
+  const currency = inferCurrency(row, fallbackMic);
   return {
     symbol, date: timestamp,
     exchange: row?.exchange || row?.exchangeCode || '',
     open, high, low, close, last: close, price: close,
     previousClose: prevClose ?? null,
-    volume, currency: 'USD',
+    volume, currency,
   };
 };
 
-const normalizeCandle = (row, symbol, prevRow) => {
+const normalizeCandle = (row, symbol, prevRow, fallbackMic) => {
   const close = toNumber(firstNonNull(row?.close, row?.last, row?.adjClose, row?.tngoLast));
   const prevClose = toNumber(firstNonNull(
     row?.prevClose, row?.adjPrevClose, prevRow?.close, prevRow?.adjClose, prevRow?.last
@@ -245,12 +285,13 @@ const normalizeCandle = (row, symbol, prevRow) => {
   const high = toNumber(firstNonNull(row?.high, row?.adjHigh, row?.highPrice, close, prevClose));
   const low  = toNumber(firstNonNull(row?.low,  row?.adjLow,  row?.lowPrice,  close, prevClose));
   const volume = toNumber(firstNonNull(row?.volume, row?.adjVolume, row?.sharesOutstanding, row?.volumeNotional));
+  const currency = inferCurrency(row, fallbackMic);
   return {
     symbol: (row?.symbol || row?.ticker || symbol || '').toUpperCase(),
     date: row?.date || row?.timestamp || new Date().toISOString(),
     open, high, low, close, last: close, price: close,
     previousClose: prevClose ?? null,
-    volume, exchange: row?.exchange || row?.exchangeCode || '', currency: 'USD',
+    volume, exchange: row?.exchange || row?.exchangeCode || '', currency,
   };
 };
 
@@ -258,7 +299,8 @@ const minutesForInterval = (interval) => (interval === '30min' ? 30 : interval =
 
 async function loadIntradayLatest(requests, token) {
   if (!requests.length) return new Map();
-  const tickers = Array.from(new Set(requests.map(r => r.ticker).filter(Boolean)));
+  const eligible = requests.filter((req) => req?.ticker && (!req.mic || REALTIME_US_MICS.has(req.mic)));
+  const tickers = Array.from(new Set(eligible.map((r) => r.ticker).filter(Boolean)));
   if (!tickers.length) return new Map();
   const data = await fetchTiingo('/iex', { tickers: tickers.join(',') }, token);
   const rows = Array.isArray(data) ? data : [];
@@ -275,7 +317,7 @@ async function loadIntradayLatest(requests, token) {
       if (source.has(key)) { match = source.get(key); break; }
     }
     if (match) {
-      const normalized = normalizeQuote(match, req.symbol);
+      const normalized = normalizeQuote(match, req.symbol, req.mic);
       normalized.symbol = req.symbol;
       if (req.mic) normalized.exchange = req.mic;
       out.set(req.symbol, normalized);
@@ -297,7 +339,7 @@ async function loadEodLatest(requests, token) {
         const latest = rows[rows.length - 1];
         const prev = rows.length > 1 ? rows[rows.length - 2] : null;
         if (!latest) return null;
-        const normalized = normalizeCandle(latest, req.symbol, prev);
+        const normalized = normalizeCandle(latest, req.symbol, prev, req.mic);
         normalized.symbol = req.symbol;
         if (req.mic) normalized.exchange = req.mic;
         return [req.symbol, normalized];
@@ -321,7 +363,7 @@ async function loadIntraday(request, interval, limit, token) {
   const count = Math.max(Number(limit) || 30, 1);
   const sliced = rows.slice(-count);
   return sliced.map((row, idx) => {
-    const normalized = normalizeCandle(row, request.symbol, idx > 0 ? sliced[idx - 1] : null);
+    const normalized = normalizeCandle(row, request.symbol, idx > 0 ? sliced[idx - 1] : null, request.mic);
     normalized.symbol = request.symbol;
     if (request.mic) normalized.exchange = request.mic;
     return normalized;
@@ -338,7 +380,7 @@ async function loadEod(request, limit, token) {
   const rows = Array.isArray(data) ? data : [];
   const sliced = rows.slice(-count);
   return sliced.map((row, idx) => {
-    const normalized = normalizeCandle(row, request.symbol, idx > 0 ? sliced[idx - 1] : null);
+    const normalized = normalizeCandle(row, request.symbol, idx > 0 ? sliced[idx - 1] : null, request.mic);
     normalized.symbol = request.symbol;
     if (request.mic) normalized.exchange = request.mic;
     return normalized;
@@ -386,9 +428,20 @@ async function handleTiingoRequest(request) {
     let warning = '';
 
     if (kind === 'intraday_latest') {
-      const quoteMap = await loadIntradayLatest(requests, token);
+      let quoteMap = new Map();
+      let realtimeError = null;
+      try {
+        quoteMap = await loadIntradayLatest(requests, token);
+      } catch (err) {
+        realtimeError = err;
+        console.warn('tiingo intraday_latest fetch failed', err);
+        quoteMap = new Map();
+      }
+
       const map = new Map();
-      requests.forEach((req) => { if (quoteMap.has(req.symbol)) map.set(req.symbol, quoteMap.get(req.symbol)); });
+      requests.forEach((req) => {
+        if (quoteMap.has(req.symbol)) map.set(req.symbol, quoteMap.get(req.symbol));
+      });
 
       let usedEodFallback = false;
       let usedMockFallback = false;
@@ -402,6 +455,7 @@ async function handleTiingoRequest(request) {
           if (fallbackRow) { map.set(req.symbol, fallbackRow); usedEodFallback = true; }
         });
       }
+
       const stillMissing = requests.filter((req) => !map.has(req.symbol));
       if (stillMissing.length) {
         const mocks = generateMockQuotes(stillMissing.map((req) => req.symbol));
@@ -409,28 +463,59 @@ async function handleTiingoRequest(request) {
           const req = stillMissing[idx]; if (!req) return;
           const clone = { ...mock, symbol: req.symbol };
           if (req.mic) clone.exchange = req.mic;
+          const inferredCurrency = inferCurrency(null, req.mic);
+          if (inferredCurrency) clone.currency = inferredCurrency;
           map.set(req.symbol, clone);
         });
         usedMockFallback = true;
       }
+
       data = requests.map((req) => map.get(req.symbol)).filter(Boolean);
 
-      if (usedMockFallback) {
-        warning = 'Some symbols are unavailable from Tiingo in real time; displaying sample data for those tickers.';
-      } else if (usedEodFallback) {
-        warning = 'Some symbols are using end-of-day fallback prices because real-time quotes were unavailable.';
+      const realtimeEligibleCount = requests.filter((req) => !req.mic || REALTIME_US_MICS.has(req.mic)).length;
+      const hasRealtimeIneligible = requests.length > 0 && realtimeEligibleCount < requests.length;
+
+      const warningParts = [];
+      if (realtimeError) {
+        warningParts.push('Real-time Tiingo quotes are temporarily unavailable; showing the latest available prices instead.');
       }
+      if (hasRealtimeIneligible) {
+        warningParts.push('Real-time pricing from Tiingo is limited to US-listed equities; international symbols use end-of-day data.');
+      }
+      if (usedMockFallback) {
+        warningParts.push('Some symbols are unavailable from Tiingo in real time; displaying sample data for those tickers.');
+      } else if (usedEodFallback && !realtimeError && !hasRealtimeIneligible) {
+        warningParts.push('Some symbols are using end-of-day fallback prices because real-time quotes were unavailable.');
+      }
+      if (warningParts.length) warning = warningParts.join(' ');
     } else if (kind === 'eod_latest') {
       const eodMap = await loadEodLatest(requests, token);
       data = requests.map((req) => eodMap.get(req.symbol)).filter(Boolean);
     } else if (kind === 'intraday') {
       const target = requests[0] || { symbol: 'AAPL', ticker: 'AAPL', mic: '' };
-      data = await loadIntraday(target, interval, limit, token);
+      let intradayError = null;
+      try {
+        data = await loadIntraday(target, interval, limit, token);
+      } catch (err) {
+        intradayError = err;
+        console.warn('tiingo intraday series fetch failed', err);
+        data = [];
+      }
       if (!data.length) {
-        const fallback = await loadEod(target, limit, token);
+        let fallback = [];
+        try {
+          fallback = await loadEod(target, limit, token);
+        } catch (err) {
+          console.warn('tiingo end-of-day fallback failed', err);
+          fallback = [];
+        }
         if (fallback.length) {
           data = fallback;
-          warning = 'Showing end-of-day prices because intraday data was unavailable.';
+          warning = intradayError
+            ? 'Real-time Tiingo intraday data is unavailable; showing end-of-day prices instead.'
+            : 'Showing end-of-day prices because intraday data was unavailable.';
+        } else if (intradayError && !warning) {
+          warning = 'Real-time Tiingo intraday data is unavailable.';
         }
       }
     } else {
