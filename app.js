@@ -611,7 +611,7 @@ async function sendWatchlistSummary() {
   if (!sendSummaryBtn) return;
   if (!emailFeatureReady) {
     setEmailStatus(
-      'Email delivery is disabled. Add EmailJS keys in your Netlify environment to enable summaries.',
+      'Email delivery is disabled. Add EmailJS keys (EMAILJS_* or EMAILS_*) in your Netlify environment to enable summaries.',
       'error'
     );
     return;
@@ -663,12 +663,16 @@ async function initEmailFeature() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const payload = await res.json();
     const env = payload?.env || {};
-    const ready = !!(env.EMAILJS_PRIVATE_KEY && env.EMAILJS_SERVICE_ID && env.EMAILJS_TEMPLATE_ID);
+    const hasKey = (...names) => names.some((name) => env[name]);
+    const ready =
+      hasKey('EMAILJS_PRIVATE_KEY', 'EMAILS_PRIVATE_KEY') &&
+      hasKey('EMAILJS_SERVICE_ID', 'EMAILS_SERVICE_ID') &&
+      hasKey('EMAILJS_TEMPLATE_ID', 'EMAILS_TEMPLATE_ID');
     emailFeatureReady = ready;
     sendSummaryBtn.disabled = !ready;
     if (!ready) {
       setEmailStatus(
-        'Email delivery is disabled. Add EmailJS keys (EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PRIVATE_KEY) in your Netlify environment to enable summaries.',
+        'Email delivery is disabled. Add EmailJS keys (EMAILJS_* or EMAILS_*) in your Netlify environment to enable summaries.',
         'error'
       );
     } else {

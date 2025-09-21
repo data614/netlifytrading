@@ -251,7 +251,7 @@ async function loadEod(symbol, limit, token) {
   return sliced.map((row, idx) => normalizeCandle(row, symbol, idx > 0 ? sliced[idx - 1] : null));
 }
 
-export default async (request) => {
+async function handleTiingoRequest(request) {
   const url = new URL(request.url);
   const symbolParam = url.searchParams.get('symbol') || 'AAPL';
   const kind = url.searchParams.get('kind') || 'eod';
@@ -379,4 +379,33 @@ export default async (request) => {
       { status: 500 }
     );
   }
+}
+
+export default handleTiingoRequest;
+
+export const handler = async (event) => {
+  const rawQuery = event?.rawQuery ?? event?.rawQueryString ?? '';
+  const path = event?.path || '/api/tiingo';
+  const host = event?.headers?.host || 'example.org';
+  const url = event?.rawUrl || `https://${host}${path}${rawQuery ? `?${rawQuery}` : ''}`;
+  const method = event?.httpMethod || 'GET';
+  const body = method === 'GET' || method === 'HEAD' ? undefined : event?.body;
+
+  const request = new Request(url, {
+    method,
+    headers: event?.headers || {},
+    body,
+  });
+
+  const response = await handleTiingoRequest(request);
+  const headers = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+
+  return {
+    statusCode: response.status,
+    headers,
+    body: await response.text(),
+  };
 };

@@ -22,16 +22,24 @@ export const handler = async (event) => {
     } = JSON.parse(event.body || '{}');
 
     // Prefer body override, else env defaults
-    const SERVICE_ID = service_id || process.env.EMAILJS_SERVICE_ID;
-    const TEMPLATE_ID = template_id || process.env.EMAILJS_TEMPLATE_ID;
-    const PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
+    const envValue = (...keys) => {
+      for (const key of keys) {
+        if (process.env[key]) return process.env[key];
+      }
+      return undefined;
+    };
+
+    const SERVICE_ID = service_id || envValue('EMAILJS_SERVICE_ID', 'EMAILS_SERVICE_ID');
+    const TEMPLATE_ID = template_id || envValue('EMAILJS_TEMPLATE_ID', 'EMAILS_TEMPLATE_ID');
+    const PRIVATE_KEY = envValue('EMAILJS_PRIVATE_KEY', 'EMAILS_PRIVATE_KEY');
 
     if (!PRIVATE_KEY || !SERVICE_ID || !TEMPLATE_ID) {
       return {
         statusCode: 500,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          error: 'Missing EmailJS configuration. Ensure EMAILJS_PRIVATE_KEY, EMAILJS_SERVICE_ID and EMAILJS_TEMPLATE_ID are set.',
+          error:
+            'Missing EmailJS configuration. Ensure EMAILJS/EMAILS_PRIVATE_KEY, EMAILJS/EMAILS_SERVICE_ID and EMAILJS/EMAILS_TEMPLATE_ID are set.',
         }),
       };
     }
