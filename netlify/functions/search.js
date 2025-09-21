@@ -1,3 +1,5 @@
+const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
+
 export default async (request) => {
   const url = new URL(request.url);
   let q = url.searchParams.get('q') || '';
@@ -16,38 +18,37 @@ export default async (request) => {
     }
   }
 
-  // If no Marketstack key, return mock
-  if (!process.env.MARKETSTACK_KEY && !process.env.REACT_APP_MARKETSTACK_KEY) {
+  const token = process.env.TIINGO_KEY || process.env.REACT_APP_TIINGO_KEY;
+  if (!token) {
     const symbol = q.toUpperCase();
     const results = q.length >= 2 ? [{ symbol, name: 'Mock Result', exchange: exchangeFilter, mic: exchangeFilter }] : [];
-    return Response.json({ data: results });
+    return Response.json({ data: results }, { headers: corsHeaders });
   }
 
   try {
-    const key = process.env.MARKETSTACK_KEY || process.env.REACT_APP_MARKETSTACK_KEY;
-    const api = new URL('https://api.marketstack.com/v2/tickers');
-    api.searchParams.set('access_key', key);
-    api.searchParams.set('search', q.replace(/\./g, '-'));
-    api.searchParams.set('limit', '10');
+    const api = new URL('https://api.tiingo.com/tiingo/utilities/search');
+    api.searchParams.set('query', q);
+    api.searchParams.set('token', token);
     const resp = await fetch(api);
     const body = await resp.json();
-    const all = (body.data || []).map((x) => ({
-      symbol: (x.symbol || '').replace(/-/g, '.'),
-      name: x.name,
-      exchange: x.stock_exchange?.acronym || '',
-      mic: x.stock_exchange?.mic || '',
-    }));
+    const items = Array.isArray(body) ? body : [];
+    const all = items.map((x) => {
+      const exchangeCode = (x.exchange || x.exchangeCode || '').toUpperCase();
+      return {
+        symbol: (x.ticker || x.permaTicker || '').toUpperCase(),
+        name: x.name || '',
+        exchange: exchangeCode || '',
+        mic: mapExchangeCodeToMic(exchangeCode),
+      };
+    });
     const filtered = all.filter(
       (it) => !exchangeFilter || it.mic === exchangeFilter || it.exchange === exchangeFilter
     );
-    return Response.json(
-      { data: filtered },
-      { headers: { 'access-control-allow-origin': '*' } }
-    );
+    return Response.json({ data: filtered }, { headers: corsHeaders });
   } catch (e) {
     return Response.json(
       { error: 'search failed', detail: String(e) },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 };
@@ -84,5 +85,26 @@ function mapSuffix(suffix) {
     BO: 'XBOM',
     SW: 'XSWX',
   };
+  return map[up] || '';
+}
+
+function mapExchangeCodeToMic(code) {
+  const up = (code || '').toUpperCase();
+  const map = {
+    NASDAQ: 'XNAS',
+    NYSE: 'XNYS',
+    ARCA: 'ARCX',
+    BATS: 'BATS',
+    AMEX: 'XASE',
+    ASX: 'XASX',
+    TSX: 'XTSE',
+    LSE: 'XLON',
+    HKEX: 'XHKG',
+    TSE: 'XTKS',
+    SGX: 'XSES',
+    NSE: 'XNSE',
+    BSE: 'XBOM',
+  };
+  if (up.startsWith('X') && up.length >= 3) return up;
   return map[up] || '';
 }
