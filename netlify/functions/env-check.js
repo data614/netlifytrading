@@ -1,7 +1,7 @@
 export default async () => {
   const keys = [
-    "MARKETSTACK_KEY",
-    "REACT_APP_MARKETSTACK_KEY",
+    "TIINGO_KEY",
+    "REACT_APP_TIINGO_KEY",
     "REACT_APP_API_KEY",
     "EMAILJS_PRIVATE_KEY",
     "EMAILJS_SERVICE_ID",

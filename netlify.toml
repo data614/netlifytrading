@@ -15,9 +15,9 @@
     "EMAILJS_TEMPLATE_ID",
     "KV_TOKEN",
     "KV_URL",
-    "MARKETSTACK_KEY",
+    "TIINGO_KEY",
     "REACT_APP_API_KEY",
-    "REACT_APP_MARKETSTACK_KEY"
+    "REACT_APP_TIINGO_KEY"
   ]
   omit_paths = [
     ".env",
