@@ -52,6 +52,57 @@ const fmtVol = (v) => {
   if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
   return String(n);
 };
+const toNumber = (value) => {
+  if (value == null || value === '') return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+const joinParam = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (item == null ? '' : String(item).trim()))
+      .join(',');
+  }
+  return value || '';
+};
+const loadTiingoQuotes = ({ symbols, exchanges, kind }) =>
+  fx('tiingo', {
+    symbol: joinParam(symbols),
+    exchange: joinParam(exchanges),
+    kind,
+  });
+const computeQuoteDeltas = (quote = {}) => {
+  const priceValue = toNumber(quote.close ?? quote.last ?? quote.price);
+  const previousClose = toNumber(quote.previousClose ?? quote.prevClose);
+  const open = toNumber(quote.open ?? quote.openPrice);
+  const reference =
+    previousClose ??
+    open ??
+    (priceValue != null ? priceValue : null);
+  const price = priceValue ?? reference ?? null;
+  const hasPrice = price != null;
+  const hasReference = reference != null;
+  const change = hasPrice && hasReference ? price - reference : null;
+  const changePercent =
+    hasPrice && hasReference && reference !== 0 ? (change / reference) * 100 : null;
+
+  return {
+    price,
+    previousClose,
+    open,
+    reference,
+    change,
+    changePercent,
+  };
+};
+const formatChangePercent = (changePercent, exchange) => {
+  if (changePercent == null || Number.isNaN(changePercent)) {
+    return exchange ? `— (${exchange})` : '—';
+  }
+  const prefix = changePercent >= 0 ? '+' : '';
+  const formatted = `${prefix}${changePercent.toFixed(2)}%`;
+  return exchange ? `${formatted} (${exchange})` : formatted;
+};
 const fmtNewsTime = (ts) => {
   if (!ts) return '';
   const d = new Date(ts);
@@ -135,29 +186,28 @@ async function loadQuote() {
     return;
   }
 
-  const price = q.close ?? q.last ?? q.price;
-  const previousClose = q.previousClose ?? q.prevClose ?? null;
-  const openValue = q.open ?? null;
-  const high = q.high ?? price;
-  const low = q.low ?? price;
-  const vol = q.volume;
+  const { price, previousClose, open, change, changePercent } = computeQuoteDeltas(q);
+  const openValue = open ?? previousClose ?? price;
+  const high = toNumber(q.high ?? q.highPrice ?? price) ?? price;
+  const low = toNumber(q.low ?? q.lowPrice ?? price) ?? price;
+  const volume = toNumber(q.volume ?? q.lastSize ?? q.tngoLastSize);
 
   $id('stockPrice').textContent = fmtMoney(price);
 
-  const reference = previousClose ?? openValue ?? price;
-  const deltaAbs = price - reference;
-  const deltaPct = reference ? (deltaAbs / reference) * 100 : 0;
-  const up = deltaAbs >= 0;
   const ce = $id('stockChange');
-  ce.textContent = `${up ? '+' : ''}${deltaAbs.toFixed(2)} (${up ? '+' : ''}${deltaPct.toFixed(
-    2
-  )}%)`;
-  ce.className = `stock-change ${up ? 'positive-change' : 'negative-change'}`;
+  if (change == null || changePercent == null) {
+    ce.textContent = '—';
+    ce.className = 'stock-change';
+  } else {
+    const up = change >= 0;
+    ce.textContent = `${up ? '+' : ''}${change.toFixed(2)} (${up ? '+' : ''}${changePercent.toFixed(2)}%)`;
+    ce.className = `stock-change ${up ? 'positive-change' : 'negative-change'}`;
+  }
 
-  $id('statOpen').textContent = fmtMoney(openValue ?? previousClose ?? price);
+  $id('statOpen').textContent = fmtMoney(openValue);
   $id('statHigh').textContent = fmtMoney(high);
   $id('statLow').textContent = fmtMoney(low);
-  $id('statVolume').textContent = fmtVol(vol);
+  $id('statVolume').textContent = fmtVol(volume);
 }
 
 /* ------------------------------ Charting ------------------------------ */
@@ -342,31 +392,46 @@ async function refreshWatchlist() {
     latestWatchlistQuotes = {};
     return {};
   }
-  const symbols = watchlist.map((it) => it.symbol).join(',');
-  const exchanges = watchlist.map((it) => it.exchange || '').join(',');
+  const watchSymbols = watchlist.map((it) => it.symbol);
+  const watchExchanges = watchlist.map((it) => it.exchange || '');
   let payload = null;
   try {
-    payload = await fx('tiingo', { symbol: symbols, exchange: exchanges, kind: 'intraday_latest' });
+    payload = await loadTiingoQuotes({
+      symbols: watchSymbols,
+      exchanges: watchExchanges,
+      kind: 'intraday_latest',
+    });
   } catch (_) {}
   if (!payload || !(payload.data && payload.data.length)) {
-    payload = await fx('tiingo', { symbol: symbols, exchange: exchanges, kind: 'eod_latest' });
+    payload = await loadTiingoQuotes({
+      symbols: watchSymbols,
+      exchanges: watchExchanges,
+      kind: 'eod_latest',
+    });
   }
-  const rows = payload.data || [];
+  const rows = (payload && Array.isArray(payload.data) ? payload.data : []).filter(Boolean);
   const map = {};
-  rows.forEach((r) => (map[r.symbol] = r));
+  rows.forEach((r) => {
+    if (r && r.symbol) {
+      map[r.symbol] = r;
+    }
+  });
 
   latestWatchlistQuotes = map;
 
   watchlist.forEach((it) => {
     const q = map[it.symbol];
     if (!q) return;
-    const price = q.close ?? q.last ?? q.price;
-    const reference = q.previousClose ?? q.prevClose ?? q.open ?? price;
-    const pct = reference ? ((price - reference) / reference) * 100 : 0;
+    const { price, changePercent } = computeQuoteDeltas(q);
     $id(`wp-${it.symbol}`).textContent = fmtMoney(price);
     const ce = $id(`wc-${it.symbol}`);
-    ce.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% ${it.exchange ? '(' + it.exchange + ')' : ''}`;
-    ce.style.color = pct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+    const exchangeLabel = it.exchange || q.exchange || '';
+    ce.textContent = formatChangePercent(changePercent, exchangeLabel);
+    if (changePercent == null || Number.isNaN(changePercent)) {
+      ce.style.color = '';
+    } else {
+      ce.style.color = changePercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+    }
   });
   return map;
 }
@@ -750,38 +815,67 @@ async function renderMovers() {
     : [{ symbol: 'AAPL' }, { symbol: 'MSFT' }, { symbol: 'NVDA' }, { symbol: 'AMZN' }, { symbol: 'GOOGL' }, { symbol: 'TSLA' }]
   ).slice(0, 20);
 
-  const symbols = universe.map((it) => it.symbol).join(',');
-  const exchanges = universe.map((it) => it.exchange || '').join(',');
+  const moverSymbols = universe.map((it) => it.symbol);
+  const moverExchanges = universe.map((it) => it.exchange || '');
   let payload = null;
   try {
-    payload = await fx('tiingo', { symbol: symbols, exchange: exchanges, kind: 'intraday_latest' });
+    payload = await loadTiingoQuotes({
+      symbols: moverSymbols,
+      exchanges: moverExchanges,
+      kind: 'intraday_latest',
+    });
   } catch (_) {}
   if (!payload || !(payload.data && payload.data.length)) {
-    payload = await fx('tiingo', { symbol: symbols, exchange: exchanges, kind: 'eod_latest' });
+    payload = await loadTiingoQuotes({
+      symbols: moverSymbols,
+      exchanges: moverExchanges,
+      kind: 'eod_latest',
+    });
   }
   const stats = [];
-  const rows = payload.data || [];
+  const rows = (payload && Array.isArray(payload.data) ? payload.data : []).filter(Boolean);
   const map = {};
-  rows.forEach((r) => (map[r.symbol] = r));
+  rows.forEach((r) => {
+    if (r && r.symbol) {
+      map[r.symbol] = r;
+    }
+  });
 
   universe.forEach((it) => {
     const q = map[it.symbol];
     if (!q) return;
-    const price = q.close ?? q.last ?? q.price;
-    const open = q.open ?? price;
-    const pct = open ? ((price - open) / open) * 100 : 0;
-    stats.push({ symbol: it.symbol, ex: q.exchange || it.exchange || '', price, pct });
+    const { price, changePercent } = computeQuoteDeltas(q);
+    stats.push({
+      symbol: it.symbol,
+      ex: q.exchange || it.exchange || '',
+      price,
+      pct: changePercent,
+    });
   });
 
-  stats.sort((a, b) => b.pct - a.pct);
+  stats.sort((a, b) => {
+    const pctA = Number.isFinite(a.pct) ? a.pct : -Infinity;
+    const pctB = Number.isFinite(b.pct) ? b.pct : -Infinity;
+    return pctB - pctA;
+  });
   stats.forEach((r) => {
     const tr = document.createElement('tr');
+    const pctText =
+      r.pct == null || Number.isNaN(r.pct)
+        ? '—'
+        : `${r.pct >= 0 ? '+' : ''}${r.pct.toFixed(2)}%`;
+    const pctColor =
+      r.pct == null || Number.isNaN(r.pct)
+        ? ''
+        : r.pct >= 0
+        ? 'var(--accent-green)'
+        : 'var(--accent-red)';
     tr.innerHTML = `
       <td class="mono">${r.symbol}</td>
       <td>${r.ex || ''}</td>
       <td>${fmtMoney(r.price)}</td>
-      <td style="color:${r.pct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
-        ${r.pct >= 0 ? '+' : ''}${r.pct.toFixed(2)}%
+      <td style="color:${pctColor}">
+        ${pctText}
       </td>`;
     rowsEl.appendChild(tr);
   });
