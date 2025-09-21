@@ -1,779 +1,484 @@
-/* ========================================================================
-   Trading Desk UI — Full App
-   - Uses Netlify Functions: /api/tiingo, /api/search, /api/hello
-   - Tiingo data handled server-side; no client secrets here.
-   - Chart.js line chart with SMA(20); y-axis begins at zero.
-   ======================================================================== */
+// netlify/functions/tiingo.js
+const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
+const API_BASE = 'https://api.tiingo.com/';
 
-/* -------------------------- Utilities & State -------------------------- */
-const $id = (id) => document.getElementById(id);
-const loadingEl = $id('loading');
-const LOADING_DELAY_MS = 150;
-let loadingCounter = 0;
-let loadingTimer = null;
-// remove refresh animation overlay for smoother UX
-const showLoading = (show) => {
-  if (!loadingEl) return;
-  const shouldShow = Boolean(show);
+const DAY_MS = 24 * 60 * 60 * 1000;
+const INTRADAY_STEP_MS = 5 * 60 * 1000;
 
-  if (shouldShow) {
-    loadingCounter += 1;
-    if (loadingCounter === 1) {
-      if (loadingTimer) clearTimeout(loadingTimer);
-      loadingTimer = setTimeout(() => {
-        loadingEl.style.display = 'flex';
-        loadingTimer = null;
-      }, LOADING_DELAY_MS);
+/* ----------------------------- MIC Helpers ---------------------------- */
+const MIC_ALIASES = {
+  NASDAQ: 'XNAS', NAS: 'XNAS', NASD: 'XNAS',
+  NYSE: 'XNYS', ARCA: 'ARCX', BATS: 'BATS', IEX: 'IEXG',
+  AMEX: 'XASE', ASE: 'XASE',
+  ASX: 'XASX', LSE: 'XLON', LON: 'XLON', LONDON: 'XLON',
+  HKEX: 'XHKG', HK: 'XHKG', HKG: 'XHKG',
+  TSE: 'XTSE', TSX: 'XTSE', TSXV: 'XTSX', VENTURE: 'XTSX',
+  JPX: 'XTKS', TYO: 'XTKS',
+  SGX: 'XSES', SI: 'XSES',
+  NSE: 'XNSE', BSE: 'XBOM',
+  FRA: 'XFRA', FWB: 'XFRA', XETRA: 'XETR', ETR: 'XETR',
+  SWX: 'XSWX', SIX: 'XSWX',
+  AMS: 'XAMS', BRU: 'XBRU', BRUX: 'XBRU',
+  MAD: 'XMAD', PAR: 'XPAR', MIL: 'XMIL',
+  BMV: 'XMEX', MEX: 'XMEX', MEXI: 'XMEX',
+  SAO: 'BVMF', B3: 'BVMF',
+  JSE: 'XJSE',
+  KRX: 'XKRX', KRXKOSPI: 'XKRX', KOSPI: 'XKRX', KOSDAQ: 'XKOS',
+  SHG: 'XSHG', SHSZ: 'XSHG', SHE: 'XSHE', SZSE: 'XSHE',
+  NZX: 'XNZE',
+  OSE: 'XOSL', OSL: 'XOSL',
+  CSE: 'XCSE', CPHEX: 'XCSE',
+  STO: 'XSTO', HEL: 'XHEL',
+  IDX: 'XIDX', JKSE: 'XIDX',
+  KLSE: 'XKLS', BKK: 'XBKK',
+};
+
+const SUFFIX_TO_MIC = {
+  AX: 'XASX', AU: 'XASX', ASX: 'XASX',
+  L: 'XLON', LN: 'XLON', LSE: 'XLON',
+  HK: 'XHKG', HKG: 'XHKG', HKEX: 'XHKG',
+  TO: 'XTSE', TSX: 'XTSE', V: 'XTSX', VX: 'XTSX',
+  T: 'XTKS', JP: 'XTKS',
+  KS: 'XKRX', KQ: 'XKOS',
+  SS: 'XSHG', SZ: 'XSHE',
+  SW: 'XSWX', SI: 'XSES', SG: 'XSES',
+  PA: 'XPAR', DE: 'XETR', F: 'XFRA', MI: 'XMIL',
+  BR: 'BVMF', SA: 'BVMF', MX: 'XMEX', MEX: 'XMEX',
+  OL: 'XOSL', CO: 'XCSE', ST: 'XSTO', HE: 'XHEL',
+  BK: 'XBKK', NZ: 'XNZE', TW: 'XTAI', TWSE: 'XTAI', TA: 'XTAI',
+  KL: 'XKLS', JK: 'XIDX',
+};
+
+const MIC_TO_TIINGO_PREFIX = {
+  XNAS: '', XNYS: '', XASE: '', ARCX: '', BATS: '', IEXG: '',
+  XASX: 'ASX', XTSE: 'TSX', XTSX: 'TSXV', XLON: 'LSE', XHKG: 'HKEX',
+  XTKS: 'TSE', XSES: 'SGX', XNSE: 'NSE', XBOM: 'BSE',
+  XFRA: 'FRA', XETR: 'XETRA', XSWX: 'SWX', XAMS: 'AMS', XBRU: 'BRU',
+  XMAD: 'MAD', XPAR: 'PAR', XMIL: 'MIL', XMEX: 'MEX', BVMF: 'BVMF',
+  XJSE: 'JSE', XKRX: 'KRX', XKOS: 'KOSDAQ', XSHG: 'SHG', XSHE: 'SHE',
+  XNZE: 'NZX', XOSL: 'OSL', XCSE: 'CPH', XSTO: 'STO', XHEL: 'HEL',
+  XIDX: 'IDX', XKLS: 'KLSE', XBKK: 'SET', XTAI: 'TWSE',
+};
+
+const parseList = (v) => (v || '').split(',').map(s => s.trim()).filter(Boolean);
+const normalizeMic = (v) => {
+  const up = (v || '').toUpperCase();
+  if (!up) return '';
+  if (MIC_ALIASES[up]) return MIC_ALIASES[up];
+  if (up.startsWith('X') && up.length >= 3) return up;
+  return '';
+};
+const micFromSuffix = (suffix) => SUFFIX_TO_MIC[(suffix || '').toUpperCase()] || '';
+const tiingoPrefixForMic = (mic) => {
+  if (!mic) return '';
+  if (Object.prototype.hasOwnProperty.call(MIC_TO_TIINGO_PREFIX, mic)) return MIC_TO_TIINGO_PREFIX[mic];
+  if (mic.startsWith('X') && mic.length > 1) return mic.slice(1);
+  return mic;
+};
+const buildTiingoTicker = (symbol, mic) => {
+  const upSymbol = (symbol || '').toUpperCase();
+  if (!upSymbol) return '';
+  if (upSymbol.includes(':')) return upSymbol; // already prefixed
+  const prefix = tiingoPrefixForMic(mic);
+  return prefix ? `${prefix}:${upSymbol}` : upSymbol;
+};
+
+function resolveSymbolRequests(symbolParam, exchangeParam) {
+  const rawSymbols = parseList(symbolParam);
+  const exchangeTokens = parseList(exchangeParam);
+  const uniqueEx = Array.from(new Set(exchangeTokens.filter(Boolean).map(s => s.toUpperCase())));
+  const defaults = rawSymbols.length ? rawSymbols : ['AAPL'];
+  const requests = [];
+
+  defaults.forEach((raw, idx) => {
+    const upper = (raw || '').trim().toUpperCase();
+    if (!upper) return;
+
+    let baseSymbol = upper;
+    let mic = '';
+
+    // "XLON:VOD" style
+    const colonIdx = upper.indexOf(':');
+    if (colonIdx > 0) {
+      const prefix = upper.slice(0, colonIdx);
+      const rest = upper.slice(colonIdx + 1);
+      const inferred = normalizeMic(prefix);
+      if (inferred) mic = inferred;
+      baseSymbol = rest;
     }
-    return;
-  }
 
-  if (loadingCounter > 0) loadingCounter -= 1;
-  if (loadingCounter === 0) {
-    if (loadingTimer) {
-      clearTimeout(loadingTimer);
-      loadingTimer = null;
+    // "BHP.AX" style
+    const dotMatch = baseSymbol.match(/^([A-Z0-9\-]+)\.([A-Z]{1,5})$/);
+    if (dotMatch) {
+      const suffixMic = micFromSuffix(dotMatch[2]);
+      if (suffixMic) {
+        mic = mic || suffixMic;
+        baseSymbol = dotMatch[1];
+      }
     }
-    loadingEl.style.display = 'none';
-  }
-};
-const showError = (msg) => {
-  const box = $id('error');
-  box.textContent = msg;
-  box.style.display = 'block';
-  setTimeout(() => (box.style.display = 'none'), 6000);
-};
-const fmtMoney = (n) => (n == null || Number.isNaN(+n) ? '—' : '$' + Number(n).toFixed(2));
-const fmtNum = (n) => (n == null || Number.isNaN(+n) ? '—' : Number(n).toLocaleString());
-const fmtVol = (v) => {
-  const n = Number(v || 0);
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
-  return String(n);
-};
-const fmtNewsTime = (ts) => {
-  if (!ts) return '';
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return '';
-  const diff = Math.max(Date.now() - d.getTime(), 0);
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  const month = 30 * day;
-  if (diff < minute) return 'Just now';
-  if (diff < hour) return `${Math.round(diff / minute)}m ago`;
-  if (diff < day) return `${Math.round(diff / hour)}h ago`;
-  if (diff < month) return `${Math.round(diff / day)}d ago`;
-  return d.toLocaleDateString();
-};
-const sma = (arr, p) => {
+
+    const direct = exchangeTokens[idx] || '';
+    const directMic = normalizeMic(direct);
+    if (!mic && directMic) mic = directMic;
+
+    if (!mic && uniqueEx.length === 1) {
+      const fb = normalizeMic(uniqueEx[0]);
+      if (fb) mic = fb;
+    }
+
+    const ticker = buildTiingoTicker(baseSymbol, mic);
+    const symbol = baseSymbol.toUpperCase();
+    const key = `${symbol}::${mic || 'US'}`;
+    const aliasKeys = Array.from(new Set([ticker, symbol, upper, baseSymbol]
+      .map(v => (v || '').toUpperCase()).filter(Boolean)));
+
+    requests.push({ symbol, mic, ticker, key, aliasKeys });
+  });
+
+  const seen = new Set();
+  return requests.filter(r => (seen.has(r.key) ? false : (seen.add(r.key), true)));
+}
+
+/* ------------------------- Mock data generators ------------------------ */
+function hashCode(input) {
+  const str = (input || 'MOCK').toUpperCase();
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) hash = (hash * 33 + str.charCodeAt(i)) >>> 0;
+  return hash || 1;
+}
+function createRng(seed) {
+  let v = seed % 2147483647;
+  if (v <= 0) v += 2147483646;
+  return () => (v = (v * 16807) % 2147483647, (v - 1) / 2147483646);
+}
+const roundPrice = (x) => Number(Math.max(x, 0.01).toFixed(2));
+
+function generateMockSeries(symbol, points = 30, mode = 'eod') {
+  const key = (symbol || 'MOCK').toUpperCase();
+  const rng = createRng(hashCode(key));
+  const base = 40 + rng() * 160;
+  const stepMs = mode === 'intraday' ? INTRADAY_STEP_MS : DAY_MS;
+  const now = Date.now();
   const out = [];
-  for (let i = 0; i < arr.length; i++) {
-     const start = Math.max(0, i - p + 1);
-    const window = arr.slice(start, i + 1);
-    const sum = window.reduce((a, b) => a + b, 0);
-    out.push(sum / window.length);
-
+  let prevClose = base;
+  for (let i = points - 1; i >= 0; i -= 1) {
+    const ts = new Date(now - i * stepMs);
+    const rawOpen = prevClose + (rng() - 0.5) * 4;
+    const open = roundPrice(rawOpen);
+    const rawClose = open + (rng() - 0.5) * 6;
+    const close = roundPrice(rawClose);
+    const high = roundPrice(Math.max(open, close) + rng() * 3);
+    const low = roundPrice(Math.min(open, close) - rng() * 3);
+    const price = roundPrice(close);
+    out.push({
+      symbol: key, date: ts.toISOString(),
+      open, high, low, close: price, last: price, price,
+      previousClose: roundPrice(prevClose),
+      volume: Math.floor(5e5 + rng() * 7e6),
+      exchange: '', currency: 'USD',
+    });
+    prevClose = close;
   }
   return out;
-};
-const intradayInterval = (tf) =>
-  tf === '1D' ? '5min' : tf === '1W' ? '30min' : tf === '1M' ? '1hour' : null;
-
-let currentSymbol = 'AAPL';
-let currentExchange = ''; // e.g. XNAS, XNYS, XASX
-let currentName = '';
-let priceChart = null;
-let selectedExchange = ''; // search filter
-let watchlist = JSON.parse(localStorage.getItem('stockWatchlistV2') || '[]');
-let latestWatchlistQuotes = {};
-
-/* ---------------------------- Fetch via FX ----------------------------- */
-async function fx(path, params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  const base = path.startsWith('http') ? path : `/api/${path}`;
-  const url = `${base}${qs ? `?${qs}` : ''}`;
-  showLoading(true);
-  try {
-    const r = await fetch(url);
-    showLoading(false);
-    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    return await r.json();
-  } catch (e) {
-    showLoading(false);
-    showError(`Request failed (${path}) — ${e.message}`);
-    throw e;
-  }
 }
+const generateMockQuote  = (s) => generateMockSeries(s, 1, 'intraday')[0];
+const generateMockQuotes = (symbols) => (symbols.length ? symbols : ['MOCK']).map(generateMockQuote);
 
-/* --------------------------- Header / Quote ---------------------------- */
-async function loadQuote() {
-  let q = null;
-  try {
-    q =
-      (await fx('tiingo', {
-        symbol: currentSymbol,
-        exchange: currentExchange,
-        kind: 'intraday_latest',
-      }))?.data?.[0] || null;
-  } catch (_) {}
-  if (!q) {
-    q =
-      (await fx('tiingo', {
-        symbol: currentSymbol,
-        exchange: currentExchange,
-        kind: 'eod_latest',
-      }))?.data?.[0] || null;
+/* --------------------------- Utils & fetchers -------------------------- */
+const toNumber = (v) => (v == null || v === '' ? null : (Number.isFinite(+v) ? +v : null));
+const firstNonNull = (...values) => { for (const v of values) if (v != null) return v; return null; };
+const formatDate = (d) => d.toISOString().split('T')[0];
+const minutesAgo = (mins) => { const d = new Date(); d.setMinutes(d.getMinutes() - mins); return d; };
+
+async function fetchTiingo(path, params, token) {
+  const url = new URL(path, API_BASE);
+  url.searchParams.set('token', token);
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
   }
-  if (!q) {
-    showError('No recent quote data');
-    return;
-  }
-
-  const price = q.close ?? q.last ?? q.price;
-  const open = q.open ?? price;
-  const high = q.high;
-  const low = q.low;
-  const vol = q.volume;
-
-  $id('stockPrice').textContent = fmtMoney(price);
-
-  const deltaAbs = price - open;
-  const deltaPct = open ? (deltaAbs / open) * 100 : 0;
-  const up = deltaAbs >= 0;
-  const ce = $id('stockChange');
-  ce.textContent = `${up ? '+' : ''}${deltaAbs.toFixed(2)} (${up ? '+' : ''}${deltaPct.toFixed(
-    2
-  )}%)`;
-  ce.className = `stock-change ${up ? 'positive-change' : 'negative-change'}`;
-
-  $id('statOpen').textContent = fmtMoney(open);
-  $id('statHigh').textContent = fmtMoney(high);
-  $id('statLow').textContent = fmtMoney(low);
-  $id('statVolume').textContent = fmtVol(vol);
-}
-
-/* ------------------------------ Charting ------------------------------ */
-async function loadTimeframe(tf) {
-  document.querySelectorAll('#tfControls button').forEach((b) => b.classList.remove('active'));
-  const btn = document.querySelector(`#tfControls button[data-tf="${tf}"]`);
-  if (btn) btn.classList.add('active');
-
-  const intr = intradayInterval(tf);
-  const kind = intr ? 'intraday' : 'eod';
-  const limit = intr ? (tf === '1D' ? 150 : tf === '1W' ? 300 : 500) : tf === '3M' ? 70 : tf === '6M' ? 140 : 260;
-
-  const payload = await fx('tiingo', {
-    symbol: currentSymbol,
-    exchange: currentExchange,
-    kind,
-    interval: intr || '',
-    limit,
-  });
-
-  const rows = (payload.data || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
-  const labels = rows.map((r) =>
-    intr ? new Date(r.date).toLocaleTimeString() : new Date(r.date).toLocaleDateString()
-  );
-  const prices = rows.map((r) => Number(r.close));
-
-  // filter out NaNs while keeping aligned labels
-  const clean = { labels: [], values: [] };
-  prices.forEach((v, i) => {
-    if (Number.isFinite(v)) {
-      clean.labels.push(labels[i]);
-      clean.values.push(v);
+  const resp = await fetch(url);
+  const text = await resp.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); }
+    catch (err) {
+      if (!resp.ok) throw new Error(`Tiingo ${resp.status}: ${text.slice(0,200)}`);
+      throw err;
     }
-  });
-  const minPrice = clean.values.length ? Math.min(...clean.values) : 0;
-  const maxPrice = clean.values.length ? Math.max(...clean.values) : 1;
-  const padding = (maxPrice - minPrice) * 0.1;
-  const yMin = Math.max(minPrice - padding, 0);
-  const yMax = maxPrice + padding;
-  const sma20 = sma(clean.values, Math.min(20, clean.values.length));
-
-  if (priceChart) priceChart.destroy();
-  priceChart = new Chart($id('stockChart'), {
-    type: 'line',
-    data: {
-      labels: clean.labels,
-      datasets: [
-        {
-          label: 'Price',
-          data: clean.values,
-          borderColor: '#2ecc71',
-          backgroundColor: 'rgba(46,204,113,.14)',
-          fill: clean.values.length > 1,
-          tension: 0.12,
-          spanGaps: false,
-          clip: 5,
-        },
-        {
-          label: 'SMA 20',
-          data: sma20,
-          borderColor: '#f1c40f',
-          borderDash: [6, 4],
-          fill: false,
-          tension: 0,
-          spanGaps: false,
-          clip: 5,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-          y: {
-          min: yMin,
-          max: yMax,
-          grid: { color: 'rgba(255,255,255,.08)' },
-          ticks: { color: '#cfd3da' },
-        },
-        x: {
-          grid: { color: 'rgba(255,255,255,.06)' },
-          ticks: { color: '#cfd3da', maxTicksLimit: 10 },
-        },
-      },
-      plugins: {
-        legend: { labels: { color: '#cfd3da' } },
-        tooltip: { mode: 'index', intersect: false },
-      },
-      animation: false,
-    },
-  });
+  }
+  if (!resp.ok) {
+    const detail = data && typeof data === 'object'
+      ? data.message || data.error || data.detail || JSON.stringify(data).slice(0,200)
+      : text.slice(0,200) || resp.statusText;
+    throw new Error(`Tiingo ${resp.status}: ${detail}`);
+  }
+  return data;
 }
 
-// allow users to switch chart timeframes via the UI controls
-$id('tfControls').addEventListener('click', (e) => {
-  const btn = e.target.closest('button');
-  if (btn && btn.dataset.tf) {
-    loadTimeframe(btn.dataset.tf);
-  }
-});
-
-/* ---------------------------- 52-Week Stats --------------------------- */
-async function load52w() {
-  const data = await fx('tiingo', {
-    symbol: currentSymbol,
-    exchange: currentExchange,
-    kind: 'eod',
-    limit: 260,
-  });
-  const rows = data.data || [];
-  if (!rows.length) {
-    $id('stat52wHigh').textContent = '—';
-    $id('stat52wLow').textContent = '—';
-    return;
-  }
-  const highs = rows.map((r) => Number(r.high)).filter(Number.isFinite);
-  const lows = rows.map((r) => Number(r.low)).filter(Number.isFinite);
-  $id('stat52wHigh').textContent = fmtMoney(Math.max(...highs));
-  $id('stat52wLow').textContent = fmtMoney(Math.min(...lows));
-}
-
-/* ------------------------------ Watchlist ----------------------------- */
-function saveWatch() {
-  localStorage.setItem('stockWatchlistV2', JSON.stringify(watchlist));
-}
-function renderWatchlist() {
-  const el = $id('watchlist');
-  el.innerHTML = '';
-  if (!watchlist.length) {
-    el.innerHTML = '<p class="muted" style="text-align:center">No symbols yet. Search above to add.</p>';
-    return;
-  }
-  watchlist.forEach((it) => {
-    const row = document.createElement('div');
-    row.className = 'watchlist-item';
-    row.dataset.symbol = it.symbol;
-    row.innerHTML = `
-      <div>
-        <div class="watchlist-symbol">${it.symbol}</div>
-        <div class="muted" style="font-size:.85em">${it.name || ''}</div>
-      </div>
-      <div style="text-align:right">
-        <div class="mono" id="wp-${it.symbol}">—</div>
-        <div class="mono muted" id="wc-${it.symbol}">—</div>
-      </div>
-      <span class="watchlist-remove" data-symbol="${it.symbol}">&times;</span>
-    `;
-    el.appendChild(row);
-  });
-  // refresh quotes for all
-  refreshWatchlist();
-}
-function addToWatchlist(symbol, exchange, name) {
-  if (!symbol) return;
-  if (!watchlist.some((x) => x.symbol === symbol)) {
-    watchlist.push({ symbol, exchange: exchange || '', name: name || '' });
-    saveWatch();
-    renderWatchlist();
-  }
-}
-function removeFromWatchlist(symbol) {
-  watchlist = watchlist.filter((s) => s.symbol !== symbol);
-  saveWatch();
-  renderWatchlist();
-}
-
-$id('watchlist').addEventListener('click', (e) => {
-  if (e.target.classList.contains('watchlist-remove')) {
-    removeFromWatchlist(e.target.dataset.symbol);
-    return;
-  }
-  const row = e.target.closest('.watchlist-item');
-  if (row) {
-    const sym = row.dataset.symbol;
-    const it = watchlist.find((x) => x.symbol === sym);
-    loadSymbol(sym, it?.exchange || '', it?.name || '');
-  }
-});
-
-async function refreshWatchlist() {
-  if (!watchlist.length) {
-    latestWatchlistQuotes = {};
-    return {};
-  }
-  const symbols = watchlist.map((it) => it.symbol).join(',');
-  let payload = null;
-  try {
-    payload = await fx('tiingo', { symbol: symbols, kind: 'intraday_latest' });
-  } catch (_) {}
-  if (!payload || !(payload.data && payload.data.length)) {
-    payload = await fx('tiingo', { symbol: symbols, kind: 'eod_latest' });
-  }
-  const rows = payload.data || [];
-  const map = {};
-  rows.forEach((r) => (map[r.symbol] = r));
-
-  latestWatchlistQuotes = map;
-
-  watchlist.forEach((it) => {
-    const q = map[it.symbol];
-    if (!q) return;
-    const price = q.close ?? q.last ?? q.price;
-    const open = q.open ?? price;
-    const pct = open ? ((price - open) / open) * 100 : 0;
-    $id(`wp-${it.symbol}`).textContent = fmtMoney(price);
-    const ce = $id(`wc-${it.symbol}`);
-    ce.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% ${it.exchange ? '(' + it.exchange + ')' : ''}`;
-    ce.style.color = pct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-  });
-  return map;
-}
-
-/* -------------------------------- Search ------------------------------ */
-const searchInput = $id('stockSearchInput');
-const searchResultsContainer = $id('searchResults');
-
-searchInput.addEventListener('input', async (e) => {
-  const q = e.target.value.trim();
-  searchResultsContainer.innerHTML = '';
-  if (q.length < 2) return;
-
-  const r = await fx('search', { q, exchange: selectedExchange || '' });
-  const items = (r.data || []).slice(0, 10);
-
-  items.forEach((it) => {
-    const row = document.createElement('div');
-    row.className = 'search-result-item';
-    row.innerHTML = `
-      <span><span class="mono">${it.symbol}</span> — ${it.name || ''} <span class="chip">${it.exchange || ''}</span></span>
-      <div style="display:flex; gap:6px">
-        <button data-symbol="${it.symbol}" data-ex="${it.mic || ''}" data-name="${it.name || ''}">Add</button>
-        <button data-load="${it.symbol}" data-ex="${it.mic || ''}" data-name="${it.name || ''}" style="background:#2ecc71">Load</button>
-      </div>`;
-    searchResultsContainer.appendChild(row);
-  });
-});
-
-searchResultsContainer.addEventListener('click', (e) => {
-  if (e.target.tagName !== 'BUTTON') return;
-  const sym = e.target.dataset.symbol || e.target.dataset.load;
-  const ex = e.target.dataset.ex || '';
-  const nm = e.target.dataset.name || '';
-  if (e.target.dataset.symbol) {
-    addToWatchlist(sym, ex, nm);
-    searchInput.value = '';
-    searchResultsContainer.innerHTML = '';
-  } else {
-    loadSymbol(sym, ex, nm);
-  }
-});
-
-/* ----------------------------- Filters (EX) ---------------------------- */
-$id('exchangeFilters').addEventListener('change', (e) => {
-  selectedExchange = e.target.value || '';
-  // re-run current search
-  const ev = new Event('input', { bubbles: true });
-  searchInput.dispatchEvent(ev);
-});
-
-/* -------------------------------- News -------------------------------- */
-async function loadNews(source = 'All') {
-  const feed = $id('news-feed');
-  feed.innerHTML = '<div class="news-item muted">Loading latest headlines…</div>';
-  try {
-    const resp = await fetch(`/api/news?source=${encodeURIComponent(source)}`);
-    if (!resp.ok) {
-      throw new Error(`${resp.status} ${resp.statusText || ''}`.trim());
-    }
-    const data = await resp.json();
-    const articles = Array.isArray(data.articles) ? data.articles : [];
-
-    feed.innerHTML = '';
-    if (data.fromCache) {
-      const notice = document.createElement('div');
-      notice.className = 'news-item muted';
-      notice.textContent = 'Showing cached headlines.';
-      feed.appendChild(notice);
-    }
-
-    if (!articles.length) {
-      const empty = document.createElement('div');
-      empty.className = 'news-item muted';
-      empty.textContent = 'No articles found for this source.';
-      feed.appendChild(empty);
-      if (data.error) {
-        showError(`News fallback in use — ${data.error}`);
-      }
-      return;
-    }
-
-    articles.forEach((article) => {
-      const item = document.createElement('div');
-      item.className = 'news-item';
-
-      const defaultUrl = `https://www.google.com/search?q=${encodeURIComponent(
-        article.title || ''
-      )}&tbm=nws`;
-      const href =
-        typeof article.url === 'string' && article.url.startsWith('http')
-          ? article.url
-          : defaultUrl;
-
-      const link = document.createElement('a');
-      link.href = href;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = article.title || 'Untitled article';
-      item.appendChild(link);
-
-      const timeLabel =
-        fmtNewsTime(article.publishedAt) ||
-        fmtNewsTime(article.time) ||
-        (article.time && typeof article.time === 'string' ? article.time : '');
-      const sourceLabel = typeof article.source === 'string' ? article.source : '';
-      const metaParts = [];
-      if (timeLabel) metaParts.push(timeLabel);
-      if (sourceLabel) metaParts.push(sourceLabel);
-      if (metaParts.length) {
-        const meta = document.createElement('small');
-        meta.textContent = metaParts.join(' — ');
-        item.appendChild(meta);
-      }
-
-      feed.appendChild(item);
-    });
-
-    if (data.error) {
-      showError(`News fallback in use — ${data.error}`);
-    }
-    if (data.warning) {
-      console.warn('News API warning:', data.warning);
-    }
-  } catch (error) {
-    console.error('loadNews error', error);
-    feed.innerHTML = '';
-    const err = document.createElement('div');
-    err.className = 'news-item muted';
-    err.textContent = 'Unable to load news right now.';
-    feed.appendChild(err);
-    showError(`News feed unavailable — ${error.message}`);
-  }
-}
-$id('newsApiButtons').addEventListener('click', (e) => {
-  if (e.target.tagName !== 'BUTTON') return;
-  $id('newsApiButtons').querySelector('.active').classList.remove('active');
-  e.target.classList.add('active');
-  loadNews(e.target.dataset.source);
-});
-
-/* ------------------------------- Profile ------------------------------- */
-const profileForm = $id('profileForm');
-profileForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  localStorage.setItem(
-    'userProfile',
-    JSON.stringify({ name: $id('userName').value, email: $id('userEmail').value })
-  );
-  $id('saveConfirmation').textContent = 'Details saved successfully!';
-  setTimeout(() => ($id('saveConfirmation').textContent = ''), 3000);
-});
-function loadProfile() {
-  const u = JSON.parse(localStorage.getItem('userProfile') || 'null');
-  if (u) {
-    $id('userName').value = u.name || '';
-    $id('userEmail').value = u.email || '';
-  }
-}
-
-const sendSummaryBtn = $id('sendSummaryBtn');
-const sendSummaryStatus = $id('sendSummaryStatus');
-let emailFeatureReady = false;
-
-function setEmailStatus(message, state = 'info') {
-  if (!sendSummaryStatus) return;
-  sendSummaryStatus.textContent = message || '';
-  sendSummaryStatus.className = state && state !== 'info' ? `status-msg ${state}` : 'status-msg';
-}
-
-function buildWatchlistEmailPayload() {
-  const storedProfile = JSON.parse(localStorage.getItem('userProfile') || 'null');
-  const name = (storedProfile?.name || '').trim();
-  const email = (storedProfile?.email || '').trim();
-  if (!email) {
-    throw new Error('Save your name and email in the profile section before sending a summary.');
-  }
-  if (!watchlist.length) {
-    throw new Error('Your watchlist is empty. Add at least one symbol before emailing a summary.');
-  }
-
-  const summaryData = watchlist.map((item) => {
-    const quote = latestWatchlistQuotes[item.symbol];
-    const label = `${item.symbol}${item.name ? ` — ${item.name}` : ''}`;
-    if (!quote) {
-      return { symbol: item.symbol, hasQuote: false, line: `${label}: quote unavailable` };
-    }
-    const price = Number(quote.close ?? quote.last ?? quote.price);
-    const open = Number(quote.open ?? price);
-    if (!Number.isFinite(price)) {
-      return { symbol: item.symbol, hasQuote: false, line: `${label}: quote unavailable` };
-    }
-    const pct = Number.isFinite(open) && open !== 0 ? ((price - open) / open) * 100 : null;
-    const pctText = pct == null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
-    return {
-      symbol: item.symbol,
-      hasQuote: true,
-      line: `${label}: ${fmtMoney(price)} (${pctText})`,
-    };
-  });
-
-  const hasLiveQuote = summaryData.some((row) => row.hasQuote);
-  if (!hasLiveQuote) {
-    throw new Error('Live pricing is still loading. Refresh the watchlist and try again.');
-  }
-
-  const summaryLines = summaryData.map((row) => row.line);
-  const bulletLines = summaryLines.map((line) => `• ${line}`).join('\n');
-  const timestamp = new Date();
-  const subjectDate = timestamp.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  const subject = `Watchlist summary — ${subjectDate}`;
-  const greetingName = name || 'there';
-  const message = [
-    `Hi ${greetingName},`,
-    '',
-    'Here is the latest snapshot of your watchlist:',
-    '',
-    bulletLines,
-    '',
-    `Generated at ${timestamp.toLocaleString()}.`,
-    '',
-    '— Netlify Trading Desk',
-  ].join('\n');
-
+const normalizeQuote = (row, fallbackSymbol) => {
+  const symbol = (row?.ticker || row?.symbol || fallbackSymbol || '').toUpperCase();
+  const price = toNumber(firstNonNull(row?.last, row?.tngoLast, row?.lastPrice, row?.mid));
+  const fallbackClose = toNumber(firstNonNull(row?.close, row?.openPrice));
+  const prevClose = toNumber(firstNonNull(row?.prevClose, row?.previousClose, fallbackClose));
+  const close = toNumber(price ?? prevClose ?? fallbackClose);
+  const baseline = firstNonNull(close, prevClose, fallbackClose);
+  const open = toNumber(firstNonNull(row?.open, row?.openPrice, row?.prevClose, prevClose, close));
+  const high = toNumber(firstNonNull(row?.high, row?.highPrice, row?.dayHigh, row?.dailyHigh, baseline));
+  const low  = toNumber(firstNonNull(row?.low,  row?.lowPrice,  row?.dayLow,  row?.dailyLow,  baseline));
+  const volume = toNumber(firstNonNull(row?.volume, row?.lastSize, row?.tngoLastSize));
+  const timestamp = row?.timestamp || row?.lastSaleTimestamp || row?.quoteTimestamp ||
+                    row?.tngoLastTime || row?.date || new Date().toISOString();
   return {
-    template_params: {
-      to_name: name || email,
-      to_email: email,
-      subject,
-      message,
-      summary_text: summaryLines.join('\n'),
-      generated_at: timestamp.toISOString(),
-      watchlist_count: summaryLines.length,
-    },
+    symbol, date: timestamp,
+    exchange: row?.exchange || row?.exchangeCode || '',
+    open, high, low, close, last: close, price: close,
+    previousClose: prevClose ?? null,
+    volume, currency: 'USD',
   };
+};
+
+const normalizeCandle = (row, symbol, prevRow) => {
+  const close = toNumber(firstNonNull(row?.close, row?.last, row?.adjClose, row?.tngoLast));
+  const prevClose = toNumber(firstNonNull(
+    row?.prevClose, row?.adjPrevClose, prevRow?.close, prevRow?.adjClose, prevRow?.last
+  ));
+  const open = toNumber(firstNonNull(row?.open, row?.adjOpen, row?.prevClose, prevClose, close));
+  const high = toNumber(firstNonNull(row?.high, row?.adjHigh, row?.highPrice, close, prevClose));
+  const low  = toNumber(firstNonNull(row?.low,  row?.adjLow,  row?.lowPrice,  close, prevClose));
+  const volume = toNumber(firstNonNull(row?.volume, row?.adjVolume, row?.sharesOutstanding, row?.volumeNotional));
+  return {
+    symbol: (row?.symbol || row?.ticker || symbol || '').toUpperCase(),
+    date: row?.date || row?.timestamp || new Date().toISOString(),
+    open, high, low, close, last: close, price: close,
+    previousClose: prevClose ?? null,
+    volume, exchange: row?.exchange || row?.exchangeCode || '', currency: 'USD',
+  };
+};
+
+const minutesForInterval = (interval) => (interval === '30min' ? 30 : interval === '1hour' ? 60 : 5);
+
+/* ------------------------------- Loaders ------------------------------- */
+async function loadIntradayLatest(requests, token) {
+  if (!requests.length) return new Map();
+  const tickers = Array.from(new Set(requests.map(r => r.ticker).filter(Boolean)));
+  if (!tickers.length) return new Map();
+  const data = await fetchTiingo('/iex', { tickers: tickers.join(',') }, token);
+  const rows = Array.isArray(data) ? data : [];
+  const source = new Map();
+  rows.forEach((row) => {
+    [row?.ticker, row?.symbol, row?.requestTicker]
+      .map(k => (k || '').toUpperCase()).filter(Boolean)
+      .forEach(k => { if (!source.has(k)) source.set(k, row); });
+  });
+  const out = new Map();
+  requests.forEach((req) => {
+    let match = null;
+    for (const key of req.aliasKeys) {
+      if (source.has(key)) { match = source.get(key); break; }
+    }
+    if (match) {
+      const normalized = normalizeQuote(match, req.symbol);
+      normalized.symbol = req.symbol;
+      if (req.mic) normalized.exchange = req.mic;
+      out.set(req.symbol, normalized);
+    }
+  });
+  return out;
 }
 
-async function sendWatchlistSummary() {
-  if (!sendSummaryBtn) return;
-  if (!emailFeatureReady) {
-    setEmailStatus(
-      'Email delivery is disabled. Add EmailJS keys in your Netlify environment to enable summaries.',
-      'error'
-    );
-    return;
-  }
-
-  if (!Object.keys(latestWatchlistQuotes).length && watchlist.length) {
-    try {
-      await refreshWatchlist();
-    } catch (err) {
-      console.warn('Unable to refresh watchlist before sending summary:', err);
-    }
-  }
-
-  let payload;
-  try {
-    payload = buildWatchlistEmailPayload();
-  } catch (err) {
-    setEmailStatus(err.message, 'error');
-    return;
-  }
-
-  try {
-    setEmailStatus('Sending summary…');
-    sendSummaryBtn.disabled = true;
-    const res = await fetch('/api/sendEmail', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data?.ok) {
-      const detail = data?.details ? ` (${data.details})` : '';
-      const message = data?.error ? `${data.error}${detail}` : `Request failed${detail}`;
-      throw new Error(message);
-    }
-    const toEmail = payload.template_params?.to_email || 'your inbox';
-    setEmailStatus(`Summary sent to ${toEmail}!`, 'success');
-  } catch (err) {
-    setEmailStatus(`Failed to send summary: ${err.message}`, 'error');
-  } finally {
-    sendSummaryBtn.disabled = !emailFeatureReady;
-  }
+async function loadEodLatest(requests, token) {
+  if (!requests.length) return new Map();
+  const start = formatDate(minutesAgo(60 * 24 * 14));
+  const pairs = await Promise.all(
+    requests.map(async (req) => {
+      if (!req.ticker) return null;
+      try {
+        const path = `/tiingo/daily/${encodeURIComponent(req.ticker)}/prices`;
+        const data = await fetchTiingo(path, { startDate: start, resampleFreq: 'daily' }, token);
+        const rows = Array.isArray(data) ? data : [];
+        const latest = rows[rows.length - 1];
+        const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+        if (!latest) return null;
+        const normalized = normalizeCandle(latest, req.symbol, prev);
+        normalized.symbol = req.symbol;
+        if (req.mic) normalized.exchange = req.mic;
+        return [req.symbol, normalized];
+      } catch { return null; }
+    })
+  );
+  const out = new Map();
+  pairs.forEach((e) => { if (e) out.set(e[0], e[1]); });
+  return out;
 }
 
-async function initEmailFeature() {
-  if (!sendSummaryBtn) return;
-  try {
-    const res = await fetch('/api/env-check');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const payload = await res.json();
-    const env = payload?.env || {};
-    const ready = !!(env.EMAILJS_PRIVATE_KEY && env.EMAILJS_SERVICE_ID && env.EMAILJS_TEMPLATE_ID);
-    emailFeatureReady = ready;
-    sendSummaryBtn.disabled = !ready;
-    if (!ready) {
-      setEmailStatus(
-        'Email delivery is disabled. Add EmailJS keys (EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PRIVATE_KEY) in your Netlify environment to enable summaries.',
-        'error'
-      );
+async function loadIntraday(request, interval, limit, token) {
+  if (!request || !request.ticker) return [];
+  const freq = interval || '5min';
+  const step = minutesForInterval(freq);
+  const lookback = step * Math.max(Number(limit) || 1, 1) + step * 6;
+  const startDate = minutesAgo(lookback).toISOString();
+  const path = `/iex/${encodeURIComponent(request.ticker)}/prices`;
+  const data = await fetchTiingo(path, { startDate, resampleFreq: freq }, token);
+  const rows = Array.isArray(data) ? data : [];
+  const count = Math.max(Number(limit) || 30, 1);
+  const sliced = rows.slice(-count);
+  return sliced.map((row, idx) => {
+    const normalized = normalizeCandle(row, request.symbol, idx > 0 ? sliced[idx - 1] : null);
+    normalized.symbol = request.symbol;
+    if (req.mic) normalized.exchange = request.mic;
+    return normalized;
+  });
+}
+
+async function loadEod(request, limit, token) {
+  if (!request || !request.ticker) return [];
+  const count = Math.max(Number(limit) || 30, 1);
+  const daysBack = Math.max(Math.ceil(count * 1.7), 60);
+  const startDate = formatDate(minutesAgo(daysBack * 24 * 60));
+  const path = `/tiingo/daily/${encodeURIComponent(request.ticker)}/prices`;
+  const data = await fetchTiingo(path, { startDate, resampleFreq: 'daily' }, token);
+  const rows = Array.isArray(data) ? data : [];
+  const sliced = rows.slice(-count);
+  return sliced.map((row, idx) => {
+    const normalized = normalizeCandle(row, request.symbol, idx > 0 ? sliced[idx - 1] : null);
+    normalized.symbol = request.symbol;
+    if (request.mic) normalized.exchange = request.mic;
+    return normalized;
+  });
+}
+
+/* ------------------------------ HTTP layer ---------------------------- */
+async function handleTiingoRequest(request) {
+  const url = new URL(request.url);
+  const symbolParam = url.searchParams.get('symbol') || 'AAPL';
+  const kind = url.searchParams.get('kind') || 'eod';
+  const interval = url.searchParams.get('interval') || '';
+  const limit = Number(url.searchParams.get('limit')) || 30;
+  const exchangeParam = url.searchParams.get('exchange') || '';
+
+  const requests = resolveSymbolRequests(symbolParam, exchangeParam);
+  const isQuoteRequest = kind === 'intraday_latest' || kind === 'eod_latest';
+  const seriesMode = kind === 'intraday' ? 'intraday' : 'eod';
+
+  const sendMock = (mode, extra = {}, init = {}) => {
+    const { seriesMode: overrideSeriesMode, ...rest } = extra;
+    const list = requests.length ? requests.map((r) => r.symbol) : ['MOCK'];
+    let data = [];
+    if (mode === 'quotes') {
+      data = generateMockQuotes(list);
     } else {
-      setEmailStatus('', 'info');
+      const target = list[0] || 'MOCK';
+      const mockSeriesMode = overrideSeriesMode || seriesMode;
+      data = generateMockSeries(target, limit || 30, mockSeriesMode);
     }
+    const body = { symbol: symbolParam, data, ...rest };
+    const responseInit = { ...init, headers: { ...corsHeaders, ...(init.headers || {}) } };
+    return Response.json(body, responseInit);
+  };
+
+  const token = process.env.TIINGO_KEY || process.env.REACT_APP_TIINGO_KEY;
+  if (!token) {
+    return sendMock(isQuoteRequest ? 'quotes' : 'series', {
+      warning: 'Tiingo API key missing. Showing sample data.',
+      seriesMode,
+    });
+  }
+
+  try {
+    let data = [];
+    let warning = '';
+
+    if (kind === 'intraday_latest') {
+      const quoteMap = await loadIntradayLatest(requests, token);
+      const map = new Map();
+      requests.forEach((req) => { if (quoteMap.has(req.symbol)) map.set(req.symbol, quoteMap.get(req.symbol)); });
+
+      let usedEodFallback = false;
+      let usedMockFallback = false;
+
+      const missing = requests.filter((req) => !map.has(req.symbol));
+      if (missing.length) {
+        const fallbackMap = await loadEodLatest(missing, token);
+        missing.forEach((req) => {
+          if (map.has(req.symbol)) return;
+          const fallbackRow = fallbackMap.get(req.symbol);
+          if (fallbackRow) { map.set(req.symbol, fallbackRow); usedEodFallback = true; }
+        });
+      }
+      const stillMissing = requests.filter((req) => !map.has(req.symbol));
+      if (stillMissing.length) {
+        const mocks = generateMockQuotes(stillMissing.map((req) => req.symbol));
+        mocks.forEach((mock, idx) => {
+          const req = stillMissing[idx]; if (!req) return;
+          const clone = { ...mock, symbol: req.symbol };
+          if (req.mic) clone.exchange = req.mic;
+          map.set(req.symbol, clone);
+        });
+        usedMockFallback = true;
+      }
+      data = requests.map((req) => map.get(req.symbol)).filter(Boolean);
+
+      if (usedMockFallback) {
+        warning = 'Some symbols are unavailable from Tiingo in real time; displaying sample data for those tickers.';
+      } else if (usedEodFallback) {
+        warning = 'Some symbols are using end-of-day fallback prices because real-time quotes were unavailable.';
+      }
+    } else if (kind === 'eod_latest') {
+      const eodMap = await loadEodLatest(requests, token);
+      data = requests.map((req) => eodMap.get(req.symbol)).filter(Boolean);
+    } else if (kind === 'intraday') {
+      const target = requests[0] || { symbol: 'AAPL', ticker: 'AAPL', mic: '' };
+      data = await loadIntraday(target, interval, limit, token);
+      if (!data.length) {
+        const fallback = await loadEod(target, limit, token);
+        if (fallback.length) {
+          data = fallback;
+          warning = 'Showing end-of-day prices because intraday data was unavailable.';
+        }
+      }
+    } else {
+      const target = requests[0] || { symbol: 'AAPL', ticker: 'AAPL', mic: '' };
+      data = await loadEod(target, limit, token);
+    }
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return sendMock(isQuoteRequest ? 'quotes' : 'series', {
+        warning: 'Tiingo data unavailable. Showing sample data.',
+        seriesMode,
+      });
+    }
+
+    const body = { symbol: symbolParam, data };
+    if (warning) body.warning = warning;
+    return Response.json(body, { headers: corsHeaders });
   } catch (err) {
-    emailFeatureReady = false;
-    if (sendSummaryBtn) sendSummaryBtn.disabled = true;
-    setEmailStatus('Unable to verify email service configuration. Try again later.', 'error');
-    console.warn('Email summary setup failed:', err);
+    return sendMock(
+      isQuoteRequest ? 'quotes' : 'series',
+      {
+        warning: 'Tiingo request failed. Showing sample data.',
+        error: 'tiingo failed',
+        detail: String(err),
+        seriesMode,
+      },
+      { status: 500 }
+    );
   }
 }
 
-if (sendSummaryBtn) {
-  sendSummaryBtn.disabled = true;
-  sendSummaryBtn.addEventListener('click', sendWatchlistSummary);
-}
+export default handleTiingoRequest;
 
-/* ----------------------------- Load Symbol ---------------------------- */
-async function loadSymbol(sym, exchange = '', knownName = '') {
-  $id('error').style.display = 'none';
-  currentSymbol = (sym || 'AAPL').toUpperCase();
-  currentExchange = exchange || '';
-  currentName = knownName || currentName || '';
-  $id('stockSymbol').textContent = currentSymbol;
-  $id('stockName').textContent = currentName || '—';
-  $id('exchangeAcronym').textContent = exchange ? `(${exchange})` : '';
-  await loadQuote();
-  await loadTimeframe('1D');
-  await load52w();
-}
+// Netlify (lambda) entrypoint
+export const handler = async (event) => {
+  const rawQuery = event?.rawQuery ?? event?.rawQueryString ?? '';
+  const path = event?.path || '/api/tiingo';
+  const host = event?.headers?.host || 'example.org';
+  const url = event?.rawUrl || `https://${host}${path}${rawQuery ? `?${rawQuery}` : ''}`;
+  const method = event?.httpMethod || 'GET';
+  const body = method === 'GET' || method === 'HEAD' ? undefined : event?.body;
 
-/* ------------------------------ Bootstrap ----------------------------- */
-async function pingBackend() {
-  try {
-    const r = await fetch('/api/hello');
-    const j = await r.json();
-    console.log('Hello function:', j);
-  } catch (_) {
-    console.warn('Backend hello not reachable.');
-  }
-}
+  const request = new Request(url, { method, headers: event?.headers || {}, body });
+  const response = await handleTiingoRequest(request);
+  const headers = {}; response.headers.forEach((v, k) => { headers[k] = v; });
 
-function bootstrap() {
-  renderWatchlist();
-  loadProfile();
-  loadNews('All');
-  initEmailFeature();
-  if (watchlist.length) {
-    const f = watchlist[0];
-    loadSymbol(f.symbol, f.exchange || '', f.name || '');
-  } else {
-    loadSymbol('AAPL');
-  }
-  // Periodic refresh: quotes + movers + watchlist
-  setInterval(() => {
-    if (currentSymbol) {
-      loadQuote();
-      renderMovers();
-      refreshWatchlist();
-    }
-  }, 60 * 1000);
-  pingBackend();
-}
-
-/* ---------------------------- Market Movers --------------------------- */
-async function renderMovers() {
-  const rowsEl = document.querySelector('#marketMoversTable tbody');
-  if (!rowsEl) return;
-  rowsEl.innerHTML = '';
-
-  const universe = (watchlist.length
-    ? watchlist
-    : [{ symbol: 'AAPL' }, { symbol: 'MSFT' }, { symbol: 'NVDA' }, { symbol: 'AMZN' }, { symbol: 'GOOGL' }, { symbol: 'TSLA' }]
-  ).slice(0, 20);
-
-  const symbols = universe.map((it) => it.symbol).join(',');
-  let payload = null;
-  try {
-    payload = await fx('tiingo', { symbol: symbols, kind: 'intraday_latest' });
-  } catch (_) {}
-  if (!payload || !(payload.data && payload.data.length)) {
-    payload = await fx('tiingo', { symbol: symbols, kind: 'eod_latest' });
-  }
-  const stats = [];
-  const rows = payload.data || [];
-  const map = {};
-  rows.forEach((r) => (map[r.symbol] = r));
-
-  universe.forEach((it) => {
-    const q = map[it.symbol];
-    if (!q) return;
-    const price = q.close ?? q.last ?? q.price;
-    const open = q.open ?? price;
-    const pct = open ? ((price - open) / open) * 100 : 0;
-    stats.push({ symbol: it.symbol, ex: q.exchange || it.exchange || '', price, pct });
-  });
-
-  stats.sort((a, b) => b.pct - a.pct);
-  stats.forEach((r) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="mono">${r.symbol}</td>
-      <td>${r.ex || ''}</td>
-      <td>${fmtMoney(r.price)}</td>
-      <td style="color:${r.pct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
-        ${r.pct >= 0 ? '+' : ''}${r.pct.toFixed(2)}%
-      </td>`;
-    rowsEl.appendChild(tr);
-  });
-}
-
-/* --------------------------------- Go --------------------------------- */
-document.addEventListener('DOMContentLoaded', bootstrap);
+  return { statusCode: response.status, headers, body: await response.text() };
+};
