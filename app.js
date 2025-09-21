@@ -1,7 +1,7 @@
 /* ========================================================================
    Trading Desk UI — Full App
-   - Uses Netlify Functions: /api/marketstack, /api/search, /api/hello
-   - Marketstack v2 handled server-side; no client secrets here.
+   - Uses Netlify Functions: /api/tiingo, /api/search, /api/hello
+   - Tiingo data handled server-side; no client secrets here.
    - Chart.js line chart with SMA(20); y-axis begins at zero.
    ======================================================================== */
 
@@ -99,7 +99,11 @@ async function fx(path, params = {}) {
     const r = await fetch(url);
     showLoading(false);
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    return await r.json();
+    const payload = await r.json();
+    if (payload && payload.warning) {
+      console.warn(`API warning (${path}): ${payload.warning}`);
+    }
+    return payload;
   } catch (e) {
     showLoading(false);
     showError(`Request failed (${path}) — ${e.message}`);
@@ -112,7 +116,7 @@ async function loadQuote() {
   let q = null;
   try {
     q =
-      (await fx('marketstack', {
+      (await fx('tiingo', {
         symbol: currentSymbol,
         exchange: currentExchange,
         kind: 'intraday_latest',
@@ -120,7 +124,7 @@ async function loadQuote() {
   } catch (_) {}
   if (!q) {
     q =
-      (await fx('marketstack', {
+      (await fx('tiingo', {
         symbol: currentSymbol,
         exchange: currentExchange,
         kind: 'eod_latest',
@@ -164,7 +168,7 @@ async function loadTimeframe(tf) {
   const kind = intr ? 'intraday' : 'eod';
   const limit = intr ? (tf === '1D' ? 150 : tf === '1W' ? 300 : 500) : tf === '3M' ? 70 : tf === '6M' ? 140 : 260;
 
-  const payload = await fx('marketstack', {
+  const payload = await fx('tiingo', {
     symbol: currentSymbol,
     exchange: currentExchange,
     kind,
@@ -255,7 +259,7 @@ $id('tfControls').addEventListener('click', (e) => {
 
 /* ---------------------------- 52-Week Stats --------------------------- */
 async function load52w() {
-  const data = await fx('marketstack', {
+  const data = await fx('tiingo', {
     symbol: currentSymbol,
     exchange: currentExchange,
     kind: 'eod',
@@ -339,10 +343,10 @@ async function refreshWatchlist() {
   const symbols = watchlist.map((it) => it.symbol).join(',');
   let payload = null;
   try {
-    payload = await fx('marketstack', { symbol: symbols, kind: 'intraday_latest' });
+    payload = await fx('tiingo', { symbol: symbols, kind: 'intraday_latest' });
   } catch (_) {}
   if (!payload || !(payload.data && payload.data.length)) {
-    payload = await fx('marketstack', { symbol: symbols, kind: 'eod_latest' });
+    payload = await fx('tiingo', { symbol: symbols, kind: 'eod_latest' });
   }
   const rows = payload.data || [];
   const map = {};
@@ -742,10 +746,10 @@ async function renderMovers() {
   const symbols = universe.map((it) => it.symbol).join(',');
   let payload = null;
   try {
-    payload = await fx('marketstack', { symbol: symbols, kind: 'intraday_latest' });
+    payload = await fx('tiingo', { symbol: symbols, kind: 'intraday_latest' });
   } catch (_) {}
   if (!payload || !(payload.data && payload.data.length)) {
-    payload = await fx('marketstack', { symbol: symbols, kind: 'eod_latest' });
+    payload = await fx('tiingo', { symbol: symbols, kind: 'eod_latest' });
   }
   const stats = [];
   const rows = payload.data || [];
