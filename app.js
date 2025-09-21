@@ -343,12 +343,13 @@ async function refreshWatchlist() {
     return {};
   }
   const symbols = watchlist.map((it) => it.symbol).join(',');
+  const exchanges = watchlist.map((it) => it.exchange || '').join(',');
   let payload = null;
   try {
-    payload = await fx('tiingo', { symbol: symbols, kind: 'intraday_latest' });
+    payload = await fx('tiingo', { symbol: symbols, exchange: exchanges, kind: 'intraday_latest' });
   } catch (_) {}
   if (!payload || !(payload.data && payload.data.length)) {
-    payload = await fx('tiingo', { symbol: symbols, kind: 'eod_latest' });
+    payload = await fx('tiingo', { symbol: symbols, exchange: exchanges, kind: 'eod_latest' });
   }
   const rows = payload.data || [];
   const map = {};
@@ -750,12 +751,13 @@ async function renderMovers() {
   ).slice(0, 20);
 
   const symbols = universe.map((it) => it.symbol).join(',');
+  const exchanges = universe.map((it) => it.exchange || '').join(',');
   let payload = null;
   try {
-    payload = await fx('tiingo', { symbol: symbols, kind: 'intraday_latest' });
+    payload = await fx('tiingo', { symbol: symbols, exchange: exchanges, kind: 'intraday_latest' });
   } catch (_) {}
   if (!payload || !(payload.data && payload.data.length)) {
-    payload = await fx('tiingo', { symbol: symbols, kind: 'eod_latest' });
+    payload = await fx('tiingo', { symbol: symbols, exchange: exchanges, kind: 'eod_latest' });
   }
   const stats = [];
   const rows = payload.data || [];
