@@ -34,28 +34,34 @@ function generateMockSeries(symbol, points = 30, mode = 'eod') {
   const now = Date.now();
   const out = [];
 
+  let prevClose = base;
+
   for (let i = points - 1; i >= 0; i -= 1) {
     const ts = new Date(now - i * stepMs);
-    const drift = (rng() - 0.5) * 8;
-    const open = base + drift;
-    const close = open + (rng() - 0.5) * 6;
-    const high = Math.max(open, close) + rng() * 3;
-    const low = Math.min(open, close) - rng() * 3;
+    const rawOpen = prevClose + (rng() - 0.5) * 4;
+    const open = roundPrice(rawOpen);
+    const rawClose = open + (rng() - 0.5) * 6;
+    const close = roundPrice(rawClose);
+    const high = roundPrice(Math.max(open, close) + rng() * 3);
+    const low = roundPrice(Math.min(open, close) - rng() * 3);
     const price = roundPrice(close);
 
     out.push({
       symbol: key,
       date: ts.toISOString(),
-      open: roundPrice(open),
-      high: roundPrice(high),
-      low: roundPrice(low),
+      open,
+      high,
+      low,
       close: price,
       last: price,
       price,
+      previousClose: roundPrice(prevClose),
       volume: Math.floor(5e5 + rng() * 7e6),
       exchange: '',
       currency: 'USD',
     });
+
+    prevClose = close;
   }
 
   return out;
@@ -124,12 +130,16 @@ async function fetchTiingo(path, params, token) {
 
 const normalizeQuote = (row, fallbackSymbol) => {
   const symbol = (row?.ticker || row?.symbol || fallbackSymbol || '').toUpperCase();
-  const close = toNumber(
-    firstNonNull(row?.close, row?.last, row?.lastPrice, row?.tngoLast, row?.mid)
+  const price = toNumber(firstNonNull(row?.last, row?.tngoLast, row?.lastPrice, row?.mid));
+  const fallbackClose = toNumber(firstNonNull(row?.close, row?.openPrice));
+  const prevClose = toNumber(firstNonNull(row?.prevClose, row?.previousClose, fallbackClose));
+  const close = toNumber(price ?? prevClose ?? fallbackClose);
+  const baseline = firstNonNull(close, prevClose, fallbackClose);
+  const open = toNumber(firstNonNull(row?.open, row?.openPrice, row?.prevClose, prevClose, close));
+  const high = toNumber(
+    firstNonNull(row?.high, row?.highPrice, row?.dayHigh, row?.dailyHigh, baseline)
   );
-  const open = toNumber(firstNonNull(row?.open, row?.prevClose, row?.openPrice));
-  const high = toNumber(firstNonNull(row?.high, row?.highPrice, close));
-  const low = toNumber(firstNonNull(row?.low, row?.lowPrice, close));
+  const low = toNumber(firstNonNull(row?.low, row?.lowPrice, row?.dayLow, row?.dailyLow, baseline));
   const volume = toNumber(firstNonNull(row?.volume, row?.lastSize, row?.tngoLastSize));
   const timestamp =
     row?.timestamp ||
@@ -148,17 +158,29 @@ const normalizeQuote = (row, fallbackSymbol) => {
     close,
     last: close,
     price: close,
+    previousClose: prevClose ?? null,
     volume,
     currency: 'USD',
   };
 };
 
-const normalizeCandle = (row, symbol) => {
+const normalizeCandle = (row, symbol, prevRow) => {
   const close = toNumber(firstNonNull(row?.close, row?.last, row?.adjClose, row?.tngoLast));
-  const open = toNumber(firstNonNull(row?.open, row?.adjOpen, row?.prevClose, close));
-  const high = toNumber(firstNonNull(row?.high, row?.adjHigh, row?.highPrice, close));
-  const low = toNumber(firstNonNull(row?.low, row?.adjLow, row?.lowPrice, close));
-  const volume = toNumber(firstNonNull(row?.volume, row?.adjVolume, row?.sharesOutstanding, row?.volumeNotional));
+  const prevClose = toNumber(
+    firstNonNull(
+      row?.prevClose,
+      row?.adjPrevClose,
+      prevRow?.close,
+      prevRow?.adjClose,
+      prevRow?.last
+    )
+  );
+  const open = toNumber(firstNonNull(row?.open, row?.adjOpen, row?.prevClose, prevClose, close));
+  const high = toNumber(firstNonNull(row?.high, row?.adjHigh, row?.highPrice, close, prevClose));
+  const low = toNumber(firstNonNull(row?.low, row?.adjLow, row?.lowPrice, close, prevClose));
+  const volume = toNumber(
+    firstNonNull(row?.volume, row?.adjVolume, row?.sharesOutstanding, row?.volumeNotional)
+  );
 
   return {
     symbol: (row?.symbol || row?.ticker || symbol || '').toUpperCase(),
@@ -169,6 +191,7 @@ const normalizeCandle = (row, symbol) => {
     close,
     last: close,
     price: close,
+    previousClose: prevClose ?? null,
     volume,
     exchange: row?.exchange || row?.exchangeCode || '',
     currency: 'USD',
@@ -197,7 +220,8 @@ async function loadEodLatest(symbols, token) {
       const data = await fetchTiingo(path, { startDate: start, resampleFreq: 'daily' }, token);
       const rows = Array.isArray(data) ? data : [];
       const latest = rows[rows.length - 1];
-      return latest ? normalizeCandle(latest, sym) : null;
+      const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+      return latest ? normalizeCandle(latest, sym, prev) : null;
     })
   );
   return results.filter(Boolean);
@@ -212,7 +236,8 @@ async function loadIntraday(symbol, interval, limit, token) {
   const data = await fetchTiingo(path, { startDate, resampleFreq: freq }, token);
   const rows = Array.isArray(data) ? data : [];
   const count = Math.max(Number(limit) || 30, 1);
-  return rows.slice(-count).map((row) => normalizeCandle(row, symbol));
+  const sliced = rows.slice(-count);
+  return sliced.map((row, idx) => normalizeCandle(row, symbol, idx > 0 ? sliced[idx - 1] : null));
 }
 
 async function loadEod(symbol, limit, token) {
@@ -222,7 +247,8 @@ async function loadEod(symbol, limit, token) {
   const path = `/tiingo/daily/${encodeURIComponent(symbol)}/prices`;
   const data = await fetchTiingo(path, { startDate, resampleFreq: 'daily' }, token);
   const rows = Array.isArray(data) ? data : [];
-  return rows.slice(-count).map((row) => normalizeCandle(row, symbol));
+  const sliced = rows.slice(-count);
+  return sliced.map((row, idx) => normalizeCandle(row, symbol, idx > 0 ? sliced[idx - 1] : null));
 }
 
 export default async (request) => {

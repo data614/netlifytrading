@@ -136,15 +136,17 @@ async function loadQuote() {
   }
 
   const price = q.close ?? q.last ?? q.price;
-  const open = q.open ?? price;
-  const high = q.high;
-  const low = q.low;
+  const previousClose = q.previousClose ?? q.prevClose ?? null;
+  const openValue = q.open ?? null;
+  const high = q.high ?? price;
+  const low = q.low ?? price;
   const vol = q.volume;
 
   $id('stockPrice').textContent = fmtMoney(price);
 
-  const deltaAbs = price - open;
-  const deltaPct = open ? (deltaAbs / open) * 100 : 0;
+  const reference = previousClose ?? openValue ?? price;
+  const deltaAbs = price - reference;
+  const deltaPct = reference ? (deltaAbs / reference) * 100 : 0;
   const up = deltaAbs >= 0;
   const ce = $id('stockChange');
   ce.textContent = `${up ? '+' : ''}${deltaAbs.toFixed(2)} (${up ? '+' : ''}${deltaPct.toFixed(
@@ -152,7 +154,7 @@ async function loadQuote() {
   )}%)`;
   ce.className = `stock-change ${up ? 'positive-change' : 'negative-change'}`;
 
-  $id('statOpen').textContent = fmtMoney(open);
+  $id('statOpen').textContent = fmtMoney(openValue ?? previousClose ?? price);
   $id('statHigh').textContent = fmtMoney(high);
   $id('statLow').textContent = fmtMoney(low);
   $id('statVolume').textContent = fmtVol(vol);
@@ -358,8 +360,8 @@ async function refreshWatchlist() {
     const q = map[it.symbol];
     if (!q) return;
     const price = q.close ?? q.last ?? q.price;
-    const open = q.open ?? price;
-    const pct = open ? ((price - open) / open) * 100 : 0;
+    const reference = q.previousClose ?? q.prevClose ?? q.open ?? price;
+    const pct = reference ? ((price - reference) / reference) * 100 : 0;
     $id(`wp-${it.symbol}`).textContent = fmtMoney(price);
     const ce = $id(`wc-${it.symbol}`);
     ce.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% ${it.exchange ? '(' + it.exchange + ')' : ''}`;
