@@ -17,7 +17,8 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-se
 .stock-price{font-size:2.2em;font-weight:800}
 .stock-change{font-size:1.05em;margin-left:12px}
 .positive-change{color:var(--accent-green)} .negative-change{color:var(--accent-red)}
-#stockChart{max-height:420px}
+#stockChart{max-height:420px;height:320px;min-height:260px;width:100%;display:block}
+.chart-status{margin-top:8px;font-size:.9em;min-height:1.2em}
 .stock-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .stat-item{background-color:var(--background-tertiary);padding:12px;border-radius:8px}
 .stat-item-label{font-size:.8em;color:var(--text-secondary);margin-bottom:4px}
