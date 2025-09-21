@@ -1,7 +1,7 @@
 const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 const API_BASE = 'https://api.tiingo.com/';
 
-function generateMockData(points = 30) {
+function generateMockData(points = 30, symbol = 'MOCK') {
   const today = new Date();
   return Array.from({ length: points }).map((_, i) => {
     const d = new Date(today);
@@ -10,17 +10,18 @@ function generateMockData(points = 30) {
     const close = open + (Math.random() - 0.5) * 4;
     const high = Math.max(open, close) + Math.random() * 2;
     const low = Math.min(open, close) - Math.random() * 2;
+    const closeVal = +close.toFixed(2);
     return {
       date: d.toISOString(),
       open: +open.toFixed(2),
       high: +high.toFixed(2),
       low: +low.toFixed(2),
-      close: +close.toFixed(2),
+      close: closeVal,
       volume: Math.floor(1e7 + Math.random() * 5e6),
-      symbol: 'MOCK',
+      symbol,
       currency: 'USD',
-      last: +close.toFixed(2),
-      price: +close.toFixed(2),
+      last: closeVal,
+      price: closeVal,
     };
   });
 }
@@ -76,14 +77,33 @@ async function fetchTiingo(path, params, token) {
   return data;
 }
 
+const summarizeError = (err) => {
+  if (!err) return '';
+  if (err instanceof Error) return err.message || err.toString();
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch (_) {
+    return String(err);
+  }
+};
+
+const appendDetail = (message, err) => {
+  const detail = summarizeError(err);
+  if (!message) return detail;
+  return detail ? `${message} (${detail})` : message;
+};
+
 const normalizeQuote = (row, fallbackSymbol) => {
   const symbol = (row?.ticker || row?.symbol || fallbackSymbol || '').toUpperCase();
   const close = toNumber(
-    firstNonNull(row?.close, row?.last, row?.lastPrice, row?.tngoLast, row?.mid)
+    firstNonNull(row?.close, row?.last, row?.lastPrice, row?.tngoLast, row?.mid, row?.adjClose)
   );
-  const open = toNumber(firstNonNull(row?.open, row?.prevClose, row?.openPrice));
-  const high = toNumber(firstNonNull(row?.high, row?.highPrice, close));
-  const low = toNumber(firstNonNull(row?.low, row?.lowPrice, close));
+  const open = toNumber(
+    firstNonNull(row?.open, row?.prevClose, row?.openPrice, row?.adjOpen, close)
+  );
+  const high = toNumber(firstNonNull(row?.high, row?.highPrice, row?.adjHigh, close));
+  const low = toNumber(firstNonNull(row?.low, row?.lowPrice, row?.adjLow, close));
   const volume = toNumber(firstNonNull(row?.volume, row?.lastSize, row?.tngoLastSize));
   const timestamp =
     row?.timestamp ||
@@ -107,19 +127,25 @@ const normalizeQuote = (row, fallbackSymbol) => {
   };
 };
 
-const normalizeCandle = (row, symbol) => ({
-  symbol: (row?.symbol || row?.ticker || symbol || '').toUpperCase(),
-  date: row?.date || row?.timestamp || new Date().toISOString(),
-  open: toNumber(row?.open),
-  high: toNumber(row?.high),
-  low: toNumber(row?.low),
-  close: toNumber(row?.close),
-  last: toNumber(row?.close),
-  price: toNumber(row?.close),
-  volume: toNumber(row?.volume),
-  exchange: row?.exchange || row?.exchangeCode || '',
-  currency: 'USD',
-});
+const normalizeCandle = (row, symbol) => {
+  const close = toNumber(firstNonNull(row?.close, row?.adjClose, row?.last, row?.lastPrice));
+  const open = toNumber(firstNonNull(row?.open, row?.adjOpen, row?.openPrice, close));
+  const high = toNumber(firstNonNull(row?.high, row?.adjHigh, close));
+  const low = toNumber(firstNonNull(row?.low, row?.adjLow, close));
+  return {
+    symbol: (row?.symbol || row?.ticker || symbol || '').toUpperCase(),
+    date: row?.date || row?.timestamp || new Date().toISOString(),
+    open,
+    high,
+    low,
+    close,
+    last: close,
+    price: close,
+    volume: toNumber(row?.volume),
+    exchange: row?.exchange || row?.exchangeCode || '',
+    currency: 'USD',
+  };
+};
 
 const minutesForInterval = (interval) => {
   if (interval === '30min') return 30;
@@ -171,6 +197,47 @@ async function loadEod(symbol, limit, token) {
   return rows.slice(-count).map((row) => normalizeCandle(row, symbol));
 }
 
+async function getWithFallback(primaryFn, fallbackFn, { fallbackWarning } = {}) {
+  let usedFallback = false;
+  let primaryError = null;
+
+  try {
+    const result = await primaryFn();
+    if (Array.isArray(result) && result.length) {
+      return { data: result, warning: null };
+    }
+    if (!fallbackFn) {
+      return { data: Array.isArray(result) ? result : [], warning: fallbackWarning || null };
+    }
+    usedFallback = true;
+  } catch (err) {
+    primaryError = err;
+    if (!fallbackFn) throw err;
+    usedFallback = true;
+  }
+
+  if (!fallbackFn) {
+    return { data: [], warning: fallbackWarning || summarizeError(primaryError) };
+  }
+
+  try {
+    const fallbackResult = await fallbackFn();
+    if (Array.isArray(fallbackResult) && fallbackResult.length) {
+      const warning = usedFallback
+        ? appendDetail(fallbackWarning || 'Tiingo primary endpoint unavailable.', primaryError)
+        : null;
+      return { data: fallbackResult, warning };
+    }
+    throw new Error('Fallback returned no data');
+  } catch (fallbackErr) {
+    const reason = appendDetail(
+      fallbackWarning || 'Tiingo primary endpoint failed.',
+      primaryError
+    );
+    throw new Error(appendDetail(reason, fallbackErr));
+  }
+}
+
 export default async (request) => {
   const url = new URL(request.url);
   const symbolParam = url.searchParams.get('symbol') || 'AAPL';
@@ -185,43 +252,77 @@ export default async (request) => {
 
   const sendMock = (extra = {}) =>
     Response.json(
-      { symbol: symbolParam, data: generateMockData(limit || 30), ...extra },
+      {
+        symbol: symbolParam,
+        data: generateMockData(limit || 30, symbols[0] || 'MOCK'),
+        ...extra,
+      },
       { headers: corsHeaders }
     );
 
+  const respond = (body, status = 200) => Response.json(body, { headers: corsHeaders, status });
+
   const token = process.env.TIINGO_KEY || process.env.REACT_APP_TIINGO_KEY;
   if (!token) {
-    return sendMock();
+    return sendMock({ warning: 'Tiingo API key missing. Showing mock pricing data.' });
   }
 
   try {
-    let data = [];
+    let result = { data: [], warning: null };
     if (kind === 'intraday_latest') {
-      data = await loadIntradayLatest(symbols, token);
+      result = await getWithFallback(
+        () => loadIntradayLatest(symbols, token),
+        () => loadEodLatest(symbols, token),
+        {
+          fallbackWarning:
+            'Tiingo intraday quotes unavailable. Showing latest daily close instead.',
+        }
+      );
     } else if (kind === 'eod_latest') {
-      data = await loadEodLatest(symbols, token);
+      const data = await loadEodLatest(symbols, token);
+      result = { data, warning: null };
     } else if (kind === 'intraday') {
       const symbol = symbols[0] || 'AAPL';
-      data = await loadIntraday(symbol, interval, limit, token);
+      result = await getWithFallback(
+        () => loadIntraday(symbol, interval, limit, token),
+        () => loadEod(symbol, limit, token),
+        {
+          fallbackWarning:
+            'Tiingo intraday candles unavailable. Showing end-of-day history instead.',
+        }
+      );
     } else {
       const symbol = symbols[0] || 'AAPL';
-      data = await loadEod(symbol, limit, token);
+      const data = await loadEod(symbol, limit, token);
+      result = { data, warning: null };
     }
+
+    const { data, warning } = result;
 
     if (!Array.isArray(data) || data.length === 0) {
-      return sendMock({ warning: 'tiingo unavailable' });
+      return respond({
+        symbol: symbolParam,
+        data: [],
+        warning: appendDetail(
+          'Tiingo returned no data for the requested symbol.',
+          warning || null
+        ),
+        error: 'tiingo_empty',
+      });
     }
 
-    return Response.json({ symbol: symbolParam, data }, { headers: corsHeaders });
+    const body = { symbol: symbolParam, data };
+    if (warning) body.warning = warning;
+    return respond(body);
   } catch (err) {
-    return Response.json(
+    console.error('Tiingo fetch failed:', err);
+    return respond(
       {
         symbol: symbolParam,
-        data: generateMockData(limit || 30),
-        error: 'tiingo failed',
-        detail: String(err),
+        error: 'tiingo_failed',
+        detail: summarizeError(err),
       },
-      { headers: corsHeaders, status: 500 }
+      502
     );
   }
 };

@@ -88,6 +88,7 @@ let priceChart = null;
 let selectedExchange = ''; // search filter
 let watchlist = JSON.parse(localStorage.getItem('stockWatchlistV2') || '[]');
 let latestWatchlistQuotes = {};
+let lastWarningKey = '';
 
 /* ---------------------------- Fetch via FX ----------------------------- */
 async function fx(path, params = {}) {
@@ -99,7 +100,17 @@ async function fx(path, params = {}) {
     const r = await fetch(url);
     showLoading(false);
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    return await r.json();
+    const data = await r.json();
+    if (data && typeof data === 'object' && data.warning) {
+      const warnKey = `${path}::${data.warning}`;
+      if (warnKey !== lastWarningKey) {
+        showError(data.warning);
+        lastWarningKey = warnKey;
+      }
+    } else {
+      lastWarningKey = '';
+    }
+    return data;
   } catch (e) {
     showLoading(false);
     showError(`Request failed (${path}) — ${e.message}`);
@@ -173,8 +184,17 @@ async function loadTimeframe(tf) {
   });
 
   const rows = (payload.data || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+  let useIntraday = Boolean(intr);
+  if (useIntraday && rows.length >= 2) {
+    const last = new Date(rows[rows.length - 1].date).getTime();
+    const prev = new Date(rows[rows.length - 2].date).getTime();
+    if (!Number.isFinite(last) || !Number.isFinite(prev) || last - prev > 12 * 60 * 60 * 1000) {
+      useIntraday = false;
+    }
+  }
+
   const labels = rows.map((r) =>
-    intr ? new Date(r.date).toLocaleTimeString() : new Date(r.date).toLocaleDateString()
+    useIntraday ? new Date(r.date).toLocaleTimeString() : new Date(r.date).toLocaleDateString()
   );
   const prices = rows.map((r) => Number(r.close));
 
