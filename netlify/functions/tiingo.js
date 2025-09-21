@@ -1,3 +1,4 @@
+// netlify/functions/tiingo.js
 const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 const API_BASE = 'https://api.tiingo.com/';
 
@@ -5,181 +6,74 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const INTRADAY_STEP_MS = 5 * 60 * 1000;
 
 const MIC_ALIASES = {
-  NASDAQ: 'XNAS',
-  NAS: 'XNAS',
-  NASD: 'XNAS',
-  NYSE: 'XNYS',
-  ARCA: 'ARCX',
-  BATS: 'BATS',
-  IEX: 'IEXG',
-  AMEX: 'XASE',
-  ASE: 'XASE',
-  ASX: 'XASX',
-  LSE: 'XLON',
-  LON: 'XLON',
-  LONDON: 'XLON',
-  HKEX: 'XHKG',
-  HK: 'XHKG',
-  HKG: 'XHKG',
-  TSE: 'XTSE',
-  TSX: 'XTSE',
-  TSXV: 'XTSX',
-  VENTURE: 'XTSX',
-  JPX: 'XTKS',
-  TYO: 'XTKS',
-  SGX: 'XSES',
-  SI: 'XSES',
-  NSE: 'XNSE',
-  BSE: 'XBOM',
-  FRA: 'XFRA',
-  FWB: 'XFRA',
-  XETRA: 'XETR',
-  ETR: 'XETR',
-  SWX: 'XSWX',
-  SIX: 'XSWX',
-  AMS: 'XAMS',
-  BRU: 'XBRU',
-  BRUX: 'XBRU',
-  MAD: 'XMAD',
-  PAR: 'XPAR',
-  MIL: 'XMIL',
-  BMV: 'XMEX',
-  MEX: 'XMEX',
-  MEXI: 'XMEX',
-  SAO: 'BVMF',
-  B3: 'BVMF',
+  NASDAQ: 'XNAS', NAS: 'XNAS', NASD: 'XNAS',
+  NYSE: 'XNYS', ARCA: 'ARCX', BATS: 'BATS', IEX: 'IEXG',
+  AMEX: 'XASE', ASE: 'XASE',
+  ASX: 'XASX', LSE: 'XLON', LON: 'XLON', LONDON: 'XLON',
+  HKEX: 'XHKG', HK: 'XHKG', HKG: 'XHKG',
+  TSE: 'XTSE', TSX: 'XTSE', TSXV: 'XTSX', VENTURE: 'XTSX',
+  JPX: 'XTKS', TYO: 'XTKS',
+  SGX: 'XSES', SI: 'XSES',
+  NSE: 'XNSE', BSE: 'XBOM',
+  FRA: 'XFRA', FWB: 'XFRA', XETRA: 'XETR', ETR: 'XETR',
+  SWX: 'XSWX', SIX: 'XSWX',
+  AMS: 'XAMS', BRU: 'XBRU', BRUX: 'XBRU',
+  MAD: 'XMAD', PAR: 'XPAR', MIL: 'XMIL',
+  BMV: 'XMEX', MEX: 'XMEX', MEXI: 'XMEX',
+  SAO: 'BVMF', B3: 'BVMF',
   JSE: 'XJSE',
-  KRX: 'XKRX',
-  KRXKOSPI: 'XKRX',
-  KOSPI: 'XKRX',
-  KOSDAQ: 'XKOS',
-  SHG: 'XSHG',
-  SHSZ: 'XSHG',
-  SHE: 'XSHE',
-  SZSE: 'XSHE',
+  KRX: 'XKRX', KRXKOSPI: 'XKRX', KOSPI: 'XKRX', KOSDAQ: 'XKOS',
+  SHG: 'XSHG', SHSZ: 'XSHG', SHE: 'XSHE', SZSE: 'XSHE',
   NZX: 'XNZE',
-  OSE: 'XOSL',
-  OSL: 'XOSL',
-  CSE: 'XCSE',
-  CPHEX: 'XCSE',
-  STO: 'XSTO',
-  HEL: 'XHEL',
-  IDX: 'XIDX',
-  JKSE: 'XIDX',
-  KLSE: 'XKLS',
-  BKK: 'XBKK',
+  OSE: 'XOSL', OSL: 'XOSL',
+  CSE: 'XCSE', CPHEX: 'XCSE',
+  STO: 'XSTO', HEL: 'XHEL',
+  IDX: 'XIDX', JKSE: 'XIDX',
+  KLSE: 'XKLS', BKK: 'XBKK',
 };
 
 const SUFFIX_TO_MIC = {
-  AX: 'XASX',
-  AU: 'XASX',
-  ASX: 'XASX',
-  L: 'XLON',
-  LN: 'XLON',
-  LSE: 'XLON',
-  HK: 'XHKG',
-  HKG: 'XHKG',
-  HKEX: 'XHKG',
-  TO: 'XTSE',
-  TSX: 'XTSE',
-  V: 'XTSX',
-  VX: 'XTSX',
-  T: 'XTKS',
-  JP: 'XTKS',
-  KS: 'XKRX',
-  KQ: 'XKOS',
-  SS: 'XSHG',
-  SZ: 'XSHE',
-  SW: 'XSWX',
-  SI: 'XSES',
-  SG: 'XSES',
-  PA: 'XPAR',
-  DE: 'XETR',
-  F: 'XFRA',
-  MI: 'XMIL',
-  BR: 'BVMF',
-  SA: 'BVMF',
-  MX: 'XMEX',
-  MEX: 'XMEX',
-  OL: 'XOSL',
-  CO: 'XCSE',
-  ST: 'XSTO',
-  HE: 'XHEL',
-  BK: 'XBKK',
-  NZ: 'XNZE',
-  TW: 'XTAI',
-  TWSE: 'XTAI',
-  TA: 'XTAI',
-  KL: 'XKLS',
-  JK: 'XIDX',
+  AX: 'XASX', AU: 'XASX', ASX: 'XASX',
+  L: 'XLON', LN: 'XLON', LSE: 'XLON',
+  HK: 'XHKG', HKG: 'XHKG', HKEX: 'XHKG',
+  TO: 'XTSE', TSX: 'XTSE', V: 'XTSX', VX: 'XTSX',
+  T: 'XTKS', JP: 'XTKS',
+  KS: 'XKRX', KQ: 'XKOS',
+  SS: 'XSHG', SZ: 'XSHE',
+  SW: 'XSWX', SI: 'XSES', SG: 'XSES',
+  PA: 'XPAR', DE: 'XETR', F: 'XFRA', MI: 'XMIL',
+  BR: 'BVMF', SA: 'BVMF', MX: 'XMEX', MEX: 'XMEX',
+  OL: 'XOSL', CO: 'XCSE', ST: 'XSTO', HE: 'XHEL',
+  BK: 'XBKK', NZ: 'XNZE', TW: 'XTAI', TWSE: 'XTAI', TA: 'XTAI',
+  KL: 'XKLS', JK: 'XIDX',
 };
 
 const MIC_TO_TIINGO_PREFIX = {
-  XNAS: '',
-  XNYS: '',
-  XASE: '',
-  ARCX: '',
-  BATS: '',
-  IEXG: '',
-  XASX: 'ASX',
-  XTSE: 'TSX',
-  XTSX: 'TSXV',
-  XLON: 'LSE',
-  XHKG: 'HKEX',
-  XTKS: 'TSE',
-  XSES: 'SGX',
-  XNSE: 'NSE',
-  XBOM: 'BSE',
-  XFRA: 'FRA',
-  XETR: 'XETRA',
-  XSWX: 'SWX',
-  XAMS: 'AMS',
-  XBRU: 'BRU',
-  XMAD: 'MAD',
-  XPAR: 'PAR',
-  XMIL: 'MIL',
-  XMEX: 'MEX',
-  BVMF: 'BVMF',
-  XJSE: 'JSE',
-  XKRX: 'KRX',
-  XKOS: 'KOSDAQ',
-  XSHG: 'SHG',
-  XSHE: 'SHE',
-  XNZE: 'NZX',
-  XOSL: 'OSL',
-  XCSE: 'CPH',
-  XSTO: 'STO',
-  XHEL: 'HEL',
-  XIDX: 'IDX',
-  XKLS: 'KLSE',
-  XBKK: 'SET',
-  XTAI: 'TWSE',
+  XNAS: '', XNYS: '', XASE: '', ARCX: '', BATS: '', IEXG: '',
+  XASX: 'ASX', XTSE: 'TSX', XTSX: 'TSXV', XLON: 'LSE', XHKG: 'HKEX',
+  XTKS: 'TSE', XSES: 'SGX', XNSE: 'NSE', XBOM: 'BSE',
+  XFRA: 'FRA', XETR: 'XETRA', XSWX: 'SWX', XAMS: 'AMS', XBRU: 'BRU',
+  XMAD: 'MAD', XPAR: 'PAR', XMIL: 'MIL', XMEX: 'MEX', BVMF: 'BVMF',
+  XJSE: 'JSE', XKRX: 'KRX', XKOS: 'KOSDAQ', XSHG: 'SHG', XSHE: 'SHE',
+  XNZE: 'NZX', XOSL: 'OSL', XCSE: 'CPH', XSTO: 'STO', XHEL: 'HEL',
+  XIDX: 'IDX', XKLS: 'KLSE', XBKK: 'SET', XTAI: 'TWSE',
 };
 
-const parseList = (value) =>
-  (value || '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
+const parseList = (v) => (v || '').split(',').map(s => s.trim()).filter(Boolean);
 
-const normalizeMic = (value) => {
-  const up = (value || '').toUpperCase();
+const normalizeMic = (v) => {
+  const up = (v || '').toUpperCase();
   if (!up) return '';
   if (MIC_ALIASES[up]) return MIC_ALIASES[up];
   if (up.startsWith('X') && up.length >= 3) return up;
   return '';
 };
 
-const micFromSuffix = (suffix) => {
-  const up = (suffix || '').toUpperCase();
-  return SUFFIX_TO_MIC[up] || '';
-};
+const micFromSuffix = (suffix) => SUFFIX_TO_MIC[(suffix || '').toUpperCase()] || '';
 
 const tiingoPrefixForMic = (mic) => {
   if (!mic) return '';
-  if (Object.prototype.hasOwnProperty.call(MIC_TO_TIINGO_PREFIX, mic)) {
-    return MIC_TO_TIINGO_PREFIX[mic];
-  }
+  if (Object.prototype.hasOwnProperty.call(MIC_TO_TIINGO_PREFIX, mic)) return MIC_TO_TIINGO_PREFIX[mic];
   if (mic.startsWith('X') && mic.length > 1) return mic.slice(1);
   return mic;
 };
@@ -189,33 +83,27 @@ const buildTiingoTicker = (symbol, mic) => {
   if (!upSymbol) return '';
   if (upSymbol.includes(':')) return upSymbol;
   const prefix = tiingoPrefixForMic(mic);
-  if (!prefix) return upSymbol;
-  return `${prefix}:${upSymbol}`;
+  return prefix ? `${prefix}:${upSymbol}` : upSymbol;
 };
 
 function resolveSymbolRequests(symbolParam, exchangeParam) {
   const rawSymbols = parseList(symbolParam);
-  const exchangeTokens = (exchangeParam || '')
-    .split(',')
-    .map((token) => token.trim());
-  const uniqueNonEmptyExchanges = Array.from(
-    new Set(exchangeTokens.filter((token) => token).map((token) => token.toUpperCase()))
-  );
+  const exchangeTokens = parseList(exchangeParam);
+  const uniqueEx = Array.from(new Set(exchangeTokens.filter(Boolean).map(s => s.toUpperCase())));
   const defaults = rawSymbols.length ? rawSymbols : ['AAPL'];
   const requests = [];
 
   defaults.forEach((raw, idx) => {
-    const initial = (raw || '').trim();
-    if (!initial) return;
-    const upperInitial = initial.toUpperCase();
+    const upper = (raw || '').trim().toUpperCase();
+    if (!upper) return;
 
-    let baseSymbol = upperInitial;
+    let baseSymbol = upper;
     let mic = '';
 
-    const colonIdx = upperInitial.indexOf(':');
+    const colonIdx = upper.indexOf(':');
     if (colonIdx > 0) {
-      const prefix = upperInitial.slice(0, colonIdx);
-      const rest = upperInitial.slice(colonIdx + 1);
+      const prefix = upper.slice(0, colonIdx);
+      const rest = upper.slice(colonIdx + 1);
       const inferred = normalizeMic(prefix);
       if (inferred) mic = inferred;
       baseSymbol = rest;
@@ -230,72 +118,40 @@ function resolveSymbolRequests(symbolParam, exchangeParam) {
       }
     }
 
-    const directExchange = exchangeTokens[idx] || '';
-    const directMic = normalizeMic(directExchange);
-    if (!mic && directMic) {
-      mic = directMic;
-    }
+    const direct = exchangeTokens[idx] || '';
+    const directMic = normalizeMic(direct);
+    if (!mic && directMic) mic = directMic;
 
-    if (!mic && uniqueNonEmptyExchanges.length === 1) {
-      const fallbackMic = normalizeMic(uniqueNonEmptyExchanges[0]);
-      if (fallbackMic) {
-        mic = fallbackMic;
-      }
+    if (!mic && uniqueEx.length === 1) {
+      const fb = normalizeMic(uniqueEx[0]);
+      if (fb) mic = fb;
     }
 
     const ticker = buildTiingoTicker(baseSymbol, mic);
     const symbol = baseSymbol.toUpperCase();
     const key = `${symbol}::${mic || 'US'}`;
-    const aliasKeys = Array.from(
-      new Set([
-        ticker,
-        symbol,
-        upperInitial,
-        baseSymbol,
-      ].map((value) => (value || '').toUpperCase()).filter(Boolean))
-    );
+    const aliasKeys = Array.from(new Set([ticker, symbol, upper, baseSymbol]
+      .map(v => (v || '').toUpperCase()).filter(Boolean)));
 
-    requests.push({
-      symbol,
-      mic,
-      ticker,
-      key,
-      aliasKeys,
-    });
+    requests.push({ symbol, mic, ticker, key, aliasKeys });
   });
 
-  const deduped = [];
   const seen = new Set();
-  requests.forEach((req) => {
-    if (seen.has(req.key)) return;
-    seen.add(req.key);
-    deduped.push(req);
-  });
-
-  return deduped;
+  return requests.filter(r => (seen.has(r.key) ? false : (seen.add(r.key), true)));
 }
 
 function hashCode(input) {
   const str = (input || 'MOCK').toUpperCase();
   let hash = 0;
-  for (let i = 0; i < str.length; i += 1) {
-    hash = (hash * 33 + str.charCodeAt(i)) >>> 0;
-  }
+  for (let i = 0; i < str.length; i += 1) hash = (hash * 33 + str.charCodeAt(i)) >>> 0;
   return hash || 1;
 }
-
 function createRng(seed) {
-  let value = seed % 2147483647;
-  if (value <= 0) value += 2147483646;
-  return () => {
-    value = (value * 16807) % 2147483647;
-    return (value - 1) / 2147483646;
-  };
+  let v = seed % 2147483647;
+  if (v <= 0) v += 2147483646;
+  return () => (v = (v * 16807) % 2147483647, (v - 1) / 2147483646);
 }
-
-function roundPrice(value) {
-  return Number(Math.max(value, 0.01).toFixed(2));
-}
+const roundPrice = (x) => Number(Math.max(x, 0.01).toFixed(2));
 
 function generateMockSeries(symbol, points = 30, mode = 'eod') {
   const key = (symbol || 'MOCK').toUpperCase();
@@ -304,9 +160,7 @@ function generateMockSeries(symbol, points = 30, mode = 'eod') {
   const stepMs = mode === 'intraday' ? INTRADAY_STEP_MS : DAY_MS;
   const now = Date.now();
   const out = [];
-
   let prevClose = base;
-
   for (let i = points - 1; i >= 0; i -= 1) {
     const ts = new Date(now - i * stepMs);
     const rawOpen = prevClose + (rng() - 0.5) * 4;
@@ -316,84 +170,45 @@ function generateMockSeries(symbol, points = 30, mode = 'eod') {
     const high = roundPrice(Math.max(open, close) + rng() * 3);
     const low = roundPrice(Math.min(open, close) - rng() * 3);
     const price = roundPrice(close);
-
     out.push({
-      symbol: key,
-      date: ts.toISOString(),
-      open,
-      high,
-      low,
-      close: price,
-      last: price,
-      price,
+      symbol: key, date: ts.toISOString(),
+      open, high, low, close: price, last: price, price,
       previousClose: roundPrice(prevClose),
       volume: Math.floor(5e5 + rng() * 7e6),
-      exchange: '',
-      currency: 'USD',
+      exchange: '', currency: 'USD',
     });
-
     prevClose = close;
   }
-
   return out;
 }
+const generateMockQuote  = (s) => generateMockSeries(s, 1, 'intraday')[0];
+const generateMockQuotes = (symbols) => (symbols.length ? symbols : ['MOCK']).map(generateMockQuote);
 
-function generateMockQuote(symbol) {
-  const series = generateMockSeries(symbol, 1, 'intraday');
-  return series[0];
-}
-
-function generateMockQuotes(symbols) {
-  const list = symbols.length ? symbols : ['MOCK'];
-  return list.map((sym) => generateMockQuote(sym));
-}
-
-const toNumber = (value) => {
-  if (value == null || value === '') return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
-
-const firstNonNull = (...values) => {
-  for (const v of values) {
-    if (v != null) return v;
-  }
-  return null;
-};
-
-const formatDate = (date) => date.toISOString().split('T')[0];
-
-const minutesAgo = (mins) => {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - mins);
-  return d;
-};
+const toNumber = (v) => (v == null || v === '' ? null : (Number.isFinite(+v) ? +v : null));
+const firstNonNull = (...values) => { for (const v of values) if (v != null) return v; return null; };
+const formatDate = (d) => d.toISOString().split('T')[0];
+const minutesAgo = (mins) => { const d = new Date(); d.setMinutes(d.getMinutes() - mins); return d; };
 
 async function fetchTiingo(path, params, token) {
   const url = new URL(path, API_BASE);
   url.searchParams.set('token', token);
-  for (const [key, value] of Object.entries(params || {})) {
-    if (value === undefined || value === null || value === '') continue;
-    url.searchParams.set(key, value);
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
   }
   const resp = await fetch(url);
   const text = await resp.text();
   let data = null;
   if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch (err) {
-      if (!resp.ok) {
-        throw new Error(`Tiingo ${resp.status}: ${text.slice(0, 200)}`);
-      }
+    try { data = JSON.parse(text); }
+    catch (err) {
+      if (!resp.ok) throw new Error(`Tiingo ${resp.status}: ${text.slice(0,200)}`);
       throw err;
     }
   }
   if (!resp.ok) {
-    const detail =
-      data && typeof data === 'object'
-        ? data.message || data.error || data.detail || JSON.stringify(data).slice(0, 200)
-        : text.slice(0, 200) || resp.statusText;
+    const detail = data && typeof data === 'object'
+      ? data.message || data.error || data.detail || JSON.stringify(data).slice(0,200)
+      : text.slice(0,200) || resp.statusText;
     throw new Error(`Tiingo ${resp.status}: ${detail}`);
   }
   return data;
@@ -407,102 +222,57 @@ const normalizeQuote = (row, fallbackSymbol) => {
   const close = toNumber(price ?? prevClose ?? fallbackClose);
   const baseline = firstNonNull(close, prevClose, fallbackClose);
   const open = toNumber(firstNonNull(row?.open, row?.openPrice, row?.prevClose, prevClose, close));
-  const high = toNumber(
-    firstNonNull(row?.high, row?.highPrice, row?.dayHigh, row?.dailyHigh, baseline)
-  );
-  const low = toNumber(firstNonNull(row?.low, row?.lowPrice, row?.dayLow, row?.dailyLow, baseline));
+  const high = toNumber(firstNonNull(row?.high, row?.highPrice, row?.dayHigh, row?.dailyHigh, baseline));
+  const low  = toNumber(firstNonNull(row?.low,  row?.lowPrice,  row?.dayLow,  row?.dailyLow,  baseline));
   const volume = toNumber(firstNonNull(row?.volume, row?.lastSize, row?.tngoLastSize));
-  const timestamp =
-    row?.timestamp ||
-    row?.lastSaleTimestamp ||
-    row?.quoteTimestamp ||
-    row?.tngoLastTime ||
-    row?.date ||
-    new Date().toISOString();
+  const timestamp = row?.timestamp || row?.lastSaleTimestamp || row?.quoteTimestamp ||
+                    row?.tngoLastTime || row?.date || new Date().toISOString();
   return {
-    symbol,
-    date: timestamp,
+    symbol, date: timestamp,
     exchange: row?.exchange || row?.exchangeCode || '',
-    open,
-    high,
-    low,
-    close,
-    last: close,
-    price: close,
+    open, high, low, close, last: close, price: close,
     previousClose: prevClose ?? null,
-    volume,
-    currency: 'USD',
+    volume, currency: 'USD',
   };
 };
 
 const normalizeCandle = (row, symbol, prevRow) => {
   const close = toNumber(firstNonNull(row?.close, row?.last, row?.adjClose, row?.tngoLast));
-  const prevClose = toNumber(
-    firstNonNull(
-      row?.prevClose,
-      row?.adjPrevClose,
-      prevRow?.close,
-      prevRow?.adjClose,
-      prevRow?.last
-    )
-  );
+  const prevClose = toNumber(firstNonNull(
+    row?.prevClose, row?.adjPrevClose, prevRow?.close, prevRow?.adjClose, prevRow?.last
+  ));
   const open = toNumber(firstNonNull(row?.open, row?.adjOpen, row?.prevClose, prevClose, close));
   const high = toNumber(firstNonNull(row?.high, row?.adjHigh, row?.highPrice, close, prevClose));
-  const low = toNumber(firstNonNull(row?.low, row?.adjLow, row?.lowPrice, close, prevClose));
-  const volume = toNumber(
-    firstNonNull(row?.volume, row?.adjVolume, row?.sharesOutstanding, row?.volumeNotional)
-  );
-
+  const low  = toNumber(firstNonNull(row?.low,  row?.adjLow,  row?.lowPrice,  close, prevClose));
+  const volume = toNumber(firstNonNull(row?.volume, row?.adjVolume, row?.sharesOutstanding, row?.volumeNotional));
   return {
     symbol: (row?.symbol || row?.ticker || symbol || '').toUpperCase(),
     date: row?.date || row?.timestamp || new Date().toISOString(),
-    open,
-    high,
-    low,
-    close,
-    last: close,
-    price: close,
+    open, high, low, close, last: close, price: close,
     previousClose: prevClose ?? null,
-    volume,
-    exchange: row?.exchange || row?.exchangeCode || '',
-    currency: 'USD',
+    volume, exchange: row?.exchange || row?.exchangeCode || '', currency: 'USD',
   };
 };
 
-const minutesForInterval = (interval) => {
-  if (interval === '30min') return 30;
-  if (interval === '1hour') return 60;
-  return 5;
-};
+const minutesForInterval = (interval) => (interval === '30min' ? 30 : interval === '1hour' ? 60 : 5);
 
 async function loadIntradayLatest(requests, token) {
   if (!requests.length) return new Map();
-  const tickers = Array.from(
-    new Set(requests.map((req) => req.ticker).filter((ticker) => !!ticker))
-  );
+  const tickers = Array.from(new Set(requests.map(r => r.ticker).filter(Boolean)));
   if (!tickers.length) return new Map();
   const data = await fetchTiingo('/iex', { tickers: tickers.join(',') }, token);
   const rows = Array.isArray(data) ? data : [];
   const source = new Map();
   rows.forEach((row) => {
-    const keys = [row?.ticker, row?.symbol, row?.requestTicker]
-      .map((key) => (key || '').toUpperCase())
-      .filter(Boolean);
-    keys.forEach((key) => {
-      if (!source.has(key)) {
-        source.set(key, row);
-      }
-    });
+    [row?.ticker, row?.symbol, row?.requestTicker]
+      .map(k => (k || '').toUpperCase()).filter(Boolean)
+      .forEach(k => { if (!source.has(k)) source.set(k, row); });
   });
-
   const out = new Map();
   requests.forEach((req) => {
     let match = null;
     for (const key of req.aliasKeys) {
-      if (source.has(key)) {
-        match = source.get(key);
-        break;
-      }
+      if (source.has(key)) { match = source.get(key); break; }
     }
     if (match) {
       const normalized = normalizeQuote(match, req.symbol);
@@ -511,7 +281,6 @@ async function loadIntradayLatest(requests, token) {
       out.set(req.symbol, normalized);
     }
   });
-
   return out;
 }
 
@@ -532,16 +301,11 @@ async function loadEodLatest(requests, token) {
         normalized.symbol = req.symbol;
         if (req.mic) normalized.exchange = req.mic;
         return [req.symbol, normalized];
-      } catch (err) {
-        return null;
-      }
+      } catch { return null; }
     })
   );
-
   const out = new Map();
-  pairs.forEach((entry) => {
-    if (entry) out.set(entry[0], entry[1]);
-  });
+  pairs.forEach((e) => { if (e) out.set(e[0], e[1]); });
   return out;
 }
 
@@ -549,7 +313,7 @@ async function loadIntraday(request, interval, limit, token) {
   if (!request || !request.ticker) return [];
   const freq = interval || '5min';
   const step = minutesForInterval(freq);
-  const lookback = step * Math.max(Number(limit) || 1, 1) + step * 6; // add a little padding
+  const lookback = step * Math.max(Number(limit) || 1, 1) + step * 6;
   const startDate = minutesAgo(lookback).toISOString();
   const path = `/iex/${encodeURIComponent(request.ticker)}/prices`;
   const data = await fetchTiingo(path, { startDate, resampleFreq: freq }, token);
@@ -590,15 +354,13 @@ async function handleTiingoRequest(request) {
   const exchangeParam = url.searchParams.get('exchange') || '';
 
   const requests = resolveSymbolRequests(symbolParam, exchangeParam);
-
   const isQuoteRequest = kind === 'intraday_latest' || kind === 'eod_latest';
   const seriesMode = kind === 'intraday' ? 'intraday' : 'eod';
 
   const sendMock = (mode, extra = {}, init = {}) => {
     const { seriesMode: overrideSeriesMode, ...rest } = extra;
-    const list = requests.length ? requests.map((req) => req.symbol) : ['MOCK'];
+    const list = requests.length ? requests.map((r) => r.symbol) : ['MOCK'];
     let data = [];
-
     if (mode === 'quotes') {
       data = generateMockQuotes(list);
     } else {
@@ -606,7 +368,6 @@ async function handleTiingoRequest(request) {
       const mockSeriesMode = overrideSeriesMode || seriesMode;
       data = generateMockSeries(target, limit || 30, mockSeriesMode);
     }
-
     const body = { symbol: symbolParam, data, ...rest };
     const responseInit = { ...init, headers: { ...corsHeaders, ...(init.headers || {}) } };
     return Response.json(body, responseInit);
@@ -623,52 +384,41 @@ async function handleTiingoRequest(request) {
   try {
     let data = [];
     let warning = '';
+
     if (kind === 'intraday_latest') {
       const quoteMap = await loadIntradayLatest(requests, token);
       const map = new Map();
-      requests.forEach((req) => {
-        if (quoteMap.has(req.symbol)) {
-          map.set(req.symbol, quoteMap.get(req.symbol));
-        }
-      });
+      requests.forEach((req) => { if (quoteMap.has(req.symbol)) map.set(req.symbol, quoteMap.get(req.symbol)); });
 
       let usedEodFallback = false;
       let usedMockFallback = false;
 
-      const missingRequests = requests.filter((req) => !map.has(req.symbol));
-      if (missingRequests.length) {
-        const fallbackMap = await loadEodLatest(missingRequests, token);
-        missingRequests.forEach((req) => {
+      const missing = requests.filter((req) => !map.has(req.symbol));
+      if (missing.length) {
+        const fallbackMap = await loadEodLatest(missing, token);
+        missing.forEach((req) => {
           if (map.has(req.symbol)) return;
           const fallbackRow = fallbackMap.get(req.symbol);
-          if (fallbackRow) {
-            map.set(req.symbol, fallbackRow);
-            usedEodFallback = true;
-          }
+          if (fallbackRow) { map.set(req.symbol, fallbackRow); usedEodFallback = true; }
         });
       }
-
       const stillMissing = requests.filter((req) => !map.has(req.symbol));
       if (stillMissing.length) {
         const mocks = generateMockQuotes(stillMissing.map((req) => req.symbol));
         mocks.forEach((mock, idx) => {
-          const req = stillMissing[idx];
-          if (!req) return;
+          const req = stillMissing[idx]; if (!req) return;
           const clone = { ...mock, symbol: req.symbol };
           if (req.mic) clone.exchange = req.mic;
           map.set(req.symbol, clone);
         });
         usedMockFallback = true;
       }
-
       data = requests.map((req) => map.get(req.symbol)).filter(Boolean);
 
       if (usedMockFallback) {
-        warning =
-          'Some symbols are unavailable from Tiingo in real time; displaying sample data for those tickers.';
+        warning = 'Some symbols are unavailable from Tiingo in real time; displaying sample data for those tickers.';
       } else if (usedEodFallback) {
-        warning =
-          'Some symbols are using end-of-day fallback prices because real-time quotes were unavailable.';
+        warning = 'Some symbols are using end-of-day fallback prices because real-time quotes were unavailable.';
       }
     } else if (kind === 'eod_latest') {
       const eodMap = await loadEodLatest(requests, token);
@@ -697,7 +447,6 @@ async function handleTiingoRequest(request) {
 
     const body = { symbol: symbolParam, data };
     if (warning) body.warning = warning;
-
     return Response.json(body, { headers: corsHeaders });
   } catch (err) {
     return sendMock(
@@ -715,6 +464,7 @@ async function handleTiingoRequest(request) {
 
 export default handleTiingoRequest;
 
+// Netlify runtime compatibility
 export const handler = async (event) => {
   const rawQuery = event?.rawQuery ?? event?.rawQueryString ?? '';
   const path = event?.path || '/api/tiingo';
@@ -723,21 +473,9 @@ export const handler = async (event) => {
   const method = event?.httpMethod || 'GET';
   const body = method === 'GET' || method === 'HEAD' ? undefined : event?.body;
 
-  const request = new Request(url, {
-    method,
-    headers: event?.headers || {},
-    body,
-  });
-
+  const request = new Request(url, { method, headers: event?.headers || {}, body });
   const response = await handleTiingoRequest(request);
-  const headers = {};
-  response.headers.forEach((value, key) => {
-    headers[key] = value;
-  });
+  const headers = {}; response.headers.forEach((v, k) => { headers[k] = v; });
 
-  return {
-    statusCode: response.status,
-    headers,
-    body: await response.text(),
-  };
+  return { statusCode: response.status, headers, body: await response.text() };
 };
