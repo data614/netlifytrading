@@ -2,6 +2,7 @@
   "name": "netlifytrading",
   "private": true,
   "scripts": {
+<<<<<<< HEAD
     "clean": "rimraf build",
     "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions",
     "start": "npx netlify-cli@latest dev"
@@ -11,4 +12,10 @@
     "rimraf": "^6.0.1",
     "shx": "^0.4.0"
   }
+=======
+    "build": "mkdir -p build/netlify/functions && cp index.html app.js app.css _redirects build/ && cp -r netlify/functions build/netlify/functions",
+    "start": "npx netlify-cli@latest dev"
+  },
+  "devDependencies": {}
+>>>>>>> 9a8fc4c4250215f97becebe08ff146c90d810f38
 }
