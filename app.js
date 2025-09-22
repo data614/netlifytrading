@@ -855,6 +855,11 @@ function bootstrap() {
   loadProfile();
   loadNews('All');
   initEmailFeature();
+  
+  // Initialize Digital Clock
+  const digitalClock = new DigitalClock('digitalClockContainer');
+  digitalClock.render();
+  
   const apiEcho = $id('apiKeyEcho');
   if (apiEcho) apiEcho.textContent = 'API: Tiingo via Netlify';
   if (watchlist.length) {
@@ -920,6 +925,104 @@ async function renderMovers() {
       </td>`;
     rowsEl.appendChild(tr);
   });
+}
+
+/* ----------------------------- Digital Clock ----------------------------- */
+class DigitalClock {
+  constructor(containerId) {
+    this.containerId = containerId;
+    this.container = null;
+    this.intervalId = null;
+    this.timeZones = [
+      { name: 'UTC', zone: 'UTC' },
+      { name: 'Eastern (US)', zone: 'America/New_York' },
+      { name: 'Pacific (US)', zone: 'America/Los_Angeles' },
+      { name: 'India', zone: 'Asia/Kolkata' },
+      { name: 'Japan', zone: 'Asia/Tokyo' }
+    ];
+  }
+
+  render() {
+    this.container = document.getElementById(this.containerId);
+    if (!this.container) {
+      console.error(`DigitalClock: Container with id "${this.containerId}" not found`);
+      return;
+    }
+
+    // Create the HTML structure
+    this.container.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h3><i class="fa-regular fa-clock"></i> World Clock</h3>
+        </div>
+        <div class="digital-clock-grid">
+          ${this.timeZones.map((tz, index) => `
+            <div class="clock-item" data-timezone="${tz.zone}">
+              <div class="clock-zone-name">${tz.name}</div>
+              <div class="clock-time" id="clock-time-${index}">--:--:--</div>
+              <div class="clock-date" id="clock-date-${index}">--/--/----</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    this.updateTimes();
+    this.start();
+  }
+
+  updateTimes() {
+    const now = new Date();
+    
+    this.timeZones.forEach((tz, index) => {
+      try {
+        // Use Intl.DateTimeFormat for accurate time zone rendering
+        const timeFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz.zone,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+
+        const dateFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz.zone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+
+        const timeEl = document.getElementById(`clock-time-${index}`);
+        const dateEl = document.getElementById(`clock-date-${index}`);
+        
+        if (timeEl) timeEl.textContent = timeFormatter.format(now);
+        if (dateEl) dateEl.textContent = dateFormatter.format(now);
+      } catch (error) {
+        console.error(`Error formatting time for ${tz.name}:`, error);
+      }
+    });
+  }
+
+  start() {
+    // Update every second
+    this.intervalId = setInterval(() => {
+      this.updateTimes();
+    }, 1000);
+  }
+
+  stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+
+  destroy() {
+    this.stop();
+    if (this.container) {
+      this.container.innerHTML = '';
+    }
+  }
 }
 
 /* --------------------------------- Go --------------------------------- */
