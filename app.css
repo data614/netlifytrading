@@ -1,0 +1,65 @@
+:root {
+  --background-primary:#121721; --background-secondary:#1f2533; --background-tertiary:#2a3142;
+  --text-primary:#e1e3e6; --text-secondary:#9a9ea4; --accent-blue:#3498db; --accent-green:#2ecc71;
+  --accent-red:#e74c3c; --border-color:#3b4355;
+}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);color:var(--text-primary);display:flex;height:100vh;overflow:hidden}
+.main-container{display:flex;flex-grow:1}
+.main-content{flex:3;padding:20px;display:flex;flex-direction:column;gap:20px;overflow-y:auto}
+.sidebar{flex:1;background-color:rgba(31,37,51,.95);padding:20px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;border-left:1px solid var(--border-color);backdrop-filter:blur(4px)}
+.card{background-color:rgba(31,37,51,.92);border-radius:10px;padding:16px;border:1px solid var(--border-color)}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border-color)}
+.card-header h3{margin:0;font-size:1.05em;color:var(--text-primary)}
+.chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:var(--text-secondary);padding:6px 10px;border-radius:999px;font-size:12px}
+.stock-header h1{margin:0;font-size:2.2em;display:flex;align-items:center;gap:8px}
+.stock-header h1 small{font-size:.5em;color:var(--text-secondary)}
+.stock-price{font-size:2.2em;font-weight:800}
+.stock-change{font-size:1.05em;margin-left:12px}
+.positive-change{color:var(--accent-green)} .negative-change{color:var(--accent-red)}
+#stockChart{max-height:420px;height:320px;min-height:260px;width:100%;display:block}
+.chart-status{margin-top:8px;font-size:.9em;min-height:1.2em}
+.stock-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat-item{background-color:var(--background-tertiary);padding:12px;border-radius:8px}
+.stat-item-label{font-size:.8em;color:var(--text-secondary);margin-bottom:4px}
+.stat-item-value{font-size:1.05em;font-weight:600}
+.search-container input,.profile-form input{width:100%;padding:10px;background-color:var(--background-tertiary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:6px}
+#profileForm button{width:100%;margin-top:10px}
+#profileForm button:first-of-type{margin-top:0}
+#searchResults{margin-top:10px}
+.search-result-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;background:rgba(255,255,255,.03);margin-bottom:6px}
+.search-result-item button{background-color:var(--accent-blue);color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer}
+.watchlist-item{display:flex;justify-content:space-between;align-items:center;padding:10px 6px;border-bottom:1px solid var(--border-color);cursor:pointer}
+.watchlist-item:hover{background:rgba(255,255,255,.03)}
+.watchlist-symbol{font-weight:700}
+.watchlist-remove{color:var(--accent-red);font-weight:700;cursor:pointer;padding:6px}
+.news-sources{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.news-sources button{background-color:var(--background-tertiary);color:var(--text-secondary);border:1px solid var(--border-color);padding:8px 12px;border-radius:999px;cursor:pointer}
+.news-sources button.active,.news-sources button:hover{background-color:var(--accent-blue);color:#fff;border-color:var(--accent-blue)}
+.news-item{padding:10px 0;border-bottom:1px solid var(--border-color)} .news-item:last-child{border-bottom:none}
+.news-item a{color:var(--text-primary);text-decoration:none;font-weight:500} .news-item a:hover{color:var(--accent-blue)}
+.news-item small{color:var(--text-secondary);display:block;margin-top:4px}
+.tf{display:flex;gap:6px;flex-wrap:wrap}
+.tf button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
+.tf button.active{background:rgba(52,152,219,.25);border-color:var(--accent-blue)}
+.exchange-filter{display:flex}
+.exchange-filter select{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:6px 10px;border-radius:8px;font-size:12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;word-break:break-all}
+.muted{color:var(--text-secondary)}
+#loading{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;font-size:18px}
+#error{display:none;background:rgba(231,76,60,.15);color:#ffc2bb;border:1px solid rgba(231,76,60,.4);padding:10px 12px;border-radius:10px;margin-bottom:10px}
+.btn-save{background:var(--accent-green);color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer}
+.btn-secondary{background-color:var(--background-tertiary);color:var(--text-primary);border:1px solid var(--border-color);padding:10px 14px;border-radius:8px;cursor:pointer;transition:background-color .2s ease,color .2s ease}
+.btn-secondary:hover:not(:disabled){background-color:rgba(255,255,255,.08)}
+.btn-secondary:disabled{opacity:.6;cursor:not-allowed}
+.ok-msg{color:var(--accent-green);margin-top:8px;font-size:.9em}
+.status-msg{margin-top:8px;font-size:.9em;min-height:1.2em;color:var(--text-secondary)}
+.status-msg.success{color:var(--accent-green)}
+.status-msg.error{color:var(--accent-red)}
+
+/* Digital Clock Styles */
+.digital-clock-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:4px}
+.clock-item{background-color:var(--background-tertiary);padding:16px;border-radius:8px;text-align:center;border:1px solid rgba(255,255,255,.08)}
+.clock-zone-name{font-size:.85em;color:var(--text-secondary);margin-bottom:8px;font-weight:500}
+.clock-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:1.4em;font-weight:700;color:var(--accent-blue);margin-bottom:4px;letter-spacing:1px}
+.clock-date{font-size:.8em;color:var(--text-secondary);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}

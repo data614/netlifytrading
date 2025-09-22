@@ -1,0 +1,43 @@
+[build]
+  publish = "build"
+  command = "npm run build"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# ✅ Secrets scanning configuration
+[secrets_scan]
+  enabled = true
+  omit_keys = [
+    "EMAILJS_PRIVATE_KEY",
+    "EMAILJS_SERVICE_ID",
+    "EMAILJS_TEMPLATE_ID",
+    "EMAILS_PRIVATE_KEY",
+    "EMAILS_SERVICE_ID",
+    "EMAILS_TEMPLATE_ID",
+    "KV_TOKEN",
+    "KV_URL",
+    "TIINGO_KEY",
+    "REACT_APP_API_KEY",
+    "REACT_APP_TIINGO_KEY"
+  ]
+  omit_paths = [
+    ".env",
+    ".env.*",
+    ".env.example",
+    "scripts/local/*",
+    "tests/fixtures/*",
+    "README.md" # TEMP: remove once README is redacted
+  ]
+
+# SPA + Functions routing
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Trading Desk — Good Hope</title>
+
+  <!-- libs -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <!-- keep repo filename -->
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="loading"><i class="fa-solid fa-spinner"></i>&nbsp;Loading…</div>
+
+  <div class="main-container">
+    <main class="main-content">
+      <div id="error"></div>
+      <div class="stock-header">
+        <h1>
+          <span id="stockName">Apple Inc.</span>
+          (<span id="stockSymbol">AAPL</span>)
+          <small id="exchangeAcronym"></small>
+        </h1>
+        <div>
+          <span id="stockPrice" class="stock-price">$—</span>
+          <span id="stockChange" class="stock-change">—</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Price Chart</h3>
+          <div class="tf" id="tfControls">
+            <button class="active" data-tf="1D">1D</button>
+            <button data-tf="1W">1W</button>
+            <button data-tf="1M">1M</button>
+            <button data-tf="3M">3M</button>
+            <button data-tf="6M">6M</button>
+            <button data-tf="1Y">1Y</button>
+          </div>
+        </div>
+        <canvas id="stockChart"></canvas>
+        <div id="chartStatus" class="chart-status muted"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Key Statistics</h3></div>
+        <div class="stock-stats">
+          <div class="stat-item"><div class="stat-item-label">Open</div><div id="statOpen" class="stat-item-value">—</div></div>
+          <div class="stat-item"><div class="stat-item-label">High</div><div id="statHigh" class="stat-item-value">—</div></div>
+          <div class="stat-item"><div class="stat-item-label">Low</div><div id="statLow" class="stat-item-value">—</div></div>
+          <div class="stat-item"><div class="stat-item-label">Volume</div><div id="statVolume" class="stat-item-value">—</div></div>
+          <div class="stat-item"><div class="stat-item-label">52W High</div><div id="stat52wHigh" class="stat-item-value">—</div></div>
+          <div class="stat-item"><div class="stat-item-label">52W Low</div><div id="stat52wLow" class="stat-item-value">—</div></div>
+        </div>
+      </div>
+
+      <div id="digitalClockContainer"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Market Movers (Watchlist universe)</h3>
+          <span class="chip mono" id="apiKeyEcho">API: —</span>
+        </div>
+        <table class="data-table" id="marketMoversTable">
+          <thead><tr><th>Symbol</th><th>Price</th><th>Δ%</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </main>
+
+    <aside class="sidebar">
+      <div class="card">
+        <div class="card-header">
+          <h3>Watchlist</h3>
+           <div class="exchange-filter">
+            <select id="exchangeFilters">
+              <option value="">All</option>
+              <option value="XNAS">NASDAQ</option>
+              <option value="XNYS">NYSE</option>
+              <option value="XASX">ASX</option>
+              <option value="XASE">AMEX</option>
+              <option value="XTSE">Toronto</option>
+              <option value="XLON">LSE</option>
+              <option value="XETR">XETRA</option>
+              <option value="XTKS">Tokyo</option>
+              <option value="XHKG">HKEX</option>
+            </select>
+          </div>
+        </div>
+        <div class="search-container">
+          <input type="text" id="stockSearchInput" placeholder="Search ticker, company, or ASX:WOW, WOW.AX…">
+          <div id="searchResults"></div>
+        </div>
+        <div id="watchlist" class="watchlist-container"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Financial News</h3></div>
+        <div class="news-sources" id="newsApiButtons">
+          <button class="active" data-source="All">All</button>
+          <button data-source="Bloomberg">Bloomberg</button>
+          <button data-source="Reuters">Reuters</button>
+          <button data-source="Yahoo">Yahoo Finance</button>
+        </div>
+        <div id="news-feed"></div>
+        <div class="muted" style="margin-top:8px">Swap in your real news API when ready.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>My Profile</h3></div>
+        <form id="profileForm" class="profile-form">
+          <div class="form-group"><label class="muted">Name</label><input type="text" id="userName" placeholder="Your Name"></div>
+          <div class="form-group"><label class="muted">Email</label><input type="email" id="userEmail" placeholder="your.email@example.com"></div>
+          <button type="submit" class="btn-save">Save Details</button>
+          <div id="saveConfirmation" class="ok-msg"></div>
+          <button type="button" id="sendSummaryBtn" class="btn-secondary">Send watchlist summary</button>
+          <div id="sendSummaryStatus" class="status-msg"></div>
+        </form>
+      </div>
+    </aside>
+  </div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

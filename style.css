@@ -1,0 +1,9 @@
+/*
+ * This file is intentionally kept as a backup entry point for teams that
+ * previously referenced `style.css`. The primary stylesheet is `app.css`.
+ *
+ * If a deployment pipeline still expects `style.css`, it will load the same
+ * styles because we simply import `app.css` below. Otherwise, this file can
+ * remain unused until you are ready to remove the legacy reference entirely.
+ */
+@import url("./app.css");
