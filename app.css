@@ -56,3 +56,10 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-se
 .status-msg{margin-top:8px;font-size:.9em;min-height:1.2em;color:var(--text-secondary)}
 .status-msg.success{color:var(--accent-green)}
 .status-msg.error{color:var(--accent-red)}
+
+/* Digital Clock Styles */
+.digital-clock-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:4px}
+.clock-item{background-color:var(--background-tertiary);padding:16px;border-radius:8px;text-align:center;border:1px solid rgba(255,255,255,.08)}
+.clock-zone-name{font-size:.85em;color:var(--text-secondary);margin-bottom:8px;font-weight:500}
+.clock-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:1.4em;font-weight:700;color:var(--accent-blue);margin-bottom:4px;letter-spacing:1px}
+.clock-date{font-size:.8em;color:var(--text-secondary);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
