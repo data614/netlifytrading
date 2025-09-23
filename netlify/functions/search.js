@@ -1,4 +1,5 @@
 import { searchLocalSymbols } from './lib/localSymbolSearch.js';
+import { getTiingoToken } from './lib/env.js';
 
 const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 const DEFAULT_LIMIT = 25;
@@ -28,7 +29,7 @@ export default async (request) => {
     ? searchLocalSymbols(cleanedQuery, { micFilter: exchangeFilter, limit })
     : [];
 
-  const token = process.env.TIINGO_KEY || process.env.REACT_APP_TIINGO_KEY;
+  const token = getTiingoToken();
   if (!token) {
     return Response.json({ data: localMatches }, { headers: corsHeaders });
   }
