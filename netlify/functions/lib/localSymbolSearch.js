@@ -5,8 +5,15 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataPath = path.resolve(__dirname, '../../../data/symbols.json');
-const dataset = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
 
+// Lazy async loader for dataset
+let datasetCache = null;
+async function getDataset() {
+  if (datasetCache) return datasetCache;
+  const data = await fs.promises.readFile(dataPath, 'utf8');
+  datasetCache = JSON.parse(data);
+  return datasetCache;
+}
 const MIC_PREFIXES = {
   XNAS: ['NASDAQ', 'US', 'USA'],
   XNYS: ['NYSE', 'US', 'USA'],
