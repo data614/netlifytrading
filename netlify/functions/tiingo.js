@@ -1,4 +1,6 @@
 // netlify/functions/tiingo.js
+import { getTiingoToken } from './lib/env.js';
+
 const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 const API_BASE = 'https://api.tiingo.com/';
 
@@ -415,7 +417,7 @@ async function handleTiingoRequest(request) {
     return Response.json(body, responseInit);
   };
 
-  const token = process.env.TIINGO_KEY || process.env.REACT_APP_TIINGO_KEY;
+  const token = getTiingoToken();
   if (!token) {
     return sendMock(isQuoteRequest ? 'quotes' : 'series', {
       warning: 'Tiingo API key missing. Showing sample data.',

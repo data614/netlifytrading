@@ -19,8 +19,12 @@
     "KV_TOKEN",
     "KV_URL",
     "TIINGO_KEY",
+    "TIINGO_API_KEY",
+    "TIINGO_TOKEN",
+    "TIINGO_ACCESS_TOKEN",
     "REACT_APP_API_KEY",
-    "REACT_APP_TIINGO_KEY"
+    "REACT_APP_TIINGO_KEY",
+    "REACT_APP_TIINGO_TOKEN"
   ]
   omit_paths = [
     ".env",
