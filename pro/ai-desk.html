@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Desk — Quantitative Research Terminal</title>
+  <link rel="stylesheet" href="../app.css">
+  <link rel="stylesheet" href="pro.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="pro-shell">
+    <header class="pro-header">
+      <h1>AI Equity Intelligence Desk</h1>
+      <nav class="pro-nav">
+        <a href="ai-desk.html" class="active">AI Desk</a>
+        <a href="market-intel.html">Market Intel</a>
+        <a href="risk-lab.html">Risk Lab</a>
+        <a href="../index.html" target="_blank" rel="noopener">Legacy Terminal</a>
+      </nav>
+    </header>
+
+    <main class="pro-content">
+      <section class="pro-card">
+        <div class="pro-section-title">
+          <div>
+            <h2>Symbol Discovery</h2>
+            <p class="pro-status" id="searchStatus">Start typing a ticker or company name to begin.</p>
+          </div>
+          <div class="actions">
+            <select class="pro-select" id="deskTimeframe">
+              <option value="1D">1 Day</option>
+              <option value="1W">1 Week</option>
+              <option value="1M">1 Month</option>
+              <option value="3M">3 Months</option>
+              <option value="6M">6 Months</option>
+              <option value="1Y" selected>1 Year</option>
+              <option value="3Y">3 Years</option>
+              <option value="5Y">5 Years</option>
+            </select>
+          </div>
+        </div>
+        <div style="position: relative;">
+          <input id="deskSearch" type="search" class="pro-input" placeholder="Search ticker or company e.g. NVDA, ASX:WOW" autocomplete="off">
+          <div id="deskSearchResults" class="pro-search-results" hidden></div>
+        </div>
+        <div class="pro-divider"></div>
+        <div class="pro-grid-2">
+          <div>
+            <h3 id="deskSelectedName">Apple Inc. — NASDAQ:AAPL</h3>
+            <div class="pro-chip-row" id="deskSnapshotChips"></div>
+            <div class="pro-metric-grid" id="deskHeadlineMetrics"></div>
+          </div>
+          <div>
+            <canvas id="deskChart" style="height:320px"></canvas>
+            <p class="pro-status" id="deskChartStatus"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="pro-card">
+        <div class="pro-section-title">
+          <div>
+            <h2>AI Fair Value & Narrative Engine</h2>
+            <p class="pro-status" id="aiStatus">Configure the objectives for the ChatGPT-5 analyst and request a valuation.</p>
+          </div>
+          <button class="pro-btn" id="aiRunButton">Run ChatGPT-5 Analyst</button>
+        </div>
+        <form id="aiObjectivesForm" class="pro-grid">
+          <label>
+            <span class="pro-subtitle">Focus Areas</span>
+            <select class="pro-select" id="aiFocus" multiple size="5">
+              <option value="valuation" selected>Intrinsic Valuation</option>
+              <option value="quality">Business Quality & Moat</option>
+              <option value="events">Catalysts & Events</option>
+              <option value="risk">Risk Scoring</option>
+              <option value="sentiment">Market Sentiment</option>
+              <option value="esg">ESG & Governance Signals</option>
+            </select>
+          </label>
+          <label>
+            <span class="pro-subtitle">Custom Directives</span>
+            <textarea class="pro-textarea" id="aiDirectives" placeholder="E.g. Emphasise balance sheet strength and cross-check with the latest 10-Q"></textarea>
+          </label>
+        </form>
+        <div class="pro-divider"></div>
+        <article id="aiResult" class="pro-scroll pro-status pro-empty">Awaiting analysis…</article>
+      </section>
+
+      <section class="pro-card">
+        <div class="pro-section-title">
+          <div>
+            <h2>Key Drivers & Intelligence Stack</h2>
+            <p class="pro-status">ChatGPT-5 uses these contextual layers to support the valuation call.</p>
+          </div>
+        </div>
+        <div class="pro-grid-2">
+          <div>
+            <h3>Operational Snapshot</h3>
+            <div id="deskOperational" class="pro-metric-grid"></div>
+          </div>
+          <div>
+            <h3>Strategic Signals</h3>
+            <div id="deskStrategic" class="pro-metric-grid"></div>
+          </div>
+        </div>
+        <div class="pro-divider"></div>
+        <div class="pro-grid-2">
+          <div>
+            <h3>Event Timeline</h3>
+            <div id="deskEvents" class="pro-timeline pro-scroll"></div>
+          </div>
+          <div>
+            <h3>Critical Documents</h3>
+            <div id="deskDocuments" class="pro-timeline pro-scroll"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./js/ai-desk.js"></script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Market Intelligence War-Room</title>
+  <link rel="stylesheet" href="../app.css">
+  <link rel="stylesheet" href="pro.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="pro-shell">
+    <header class="pro-header">
+      <h1>Market Intelligence War-Room</h1>
+      <nav class="pro-nav">
+        <a href="ai-desk.html">AI Desk</a>
+        <a href="market-intel.html" class="active">Market Intel</a>
+        <a href="risk-lab.html">Risk Lab</a>
+        <a href="../index.html" target="_blank" rel="noopener">Legacy Terminal</a>
+      </nav>
+    </header>
+
+    <main class="pro-content">
+      <section class="pro-card">
+        <div class="pro-section-title">
+          <div>
+            <h2>Corporate Event Radar</h2>
+            <p class="pro-status" id="intelStatus">Select a symbol to see real-time governance, filings, and catalysts.</p>
+          </div>
+          <div class="pro-inline-form">
+            <input type="search" id="intelSearch" class="pro-input" placeholder="Search ticker or company" autocomplete="off">
+            <select id="intelScope" class="pro-select">
+              <option value="60">Last 60 days</option>
+              <option value="120" selected>Last 120 days</option>
+              <option value="240">Last 240 days</option>
+              <option value="365">Last 365 days</option>
+            </select>
+          </div>
+        </div>
+        <div id="intelSearchResults" class="pro-search-results" hidden></div>
+        <div class="pro-divider"></div>
+        <div class="pro-grid-2">
+          <div>
+            <h3>Event Timeline</h3>
+            <div id="intelTimeline" class="pro-timeline pro-scroll" style="max-height:420px"></div>
+          </div>
+          <div>
+            <h3>Filings & Public Documents</h3>
+            <div id="intelDocuments" class="pro-timeline pro-scroll" style="max-height:420px"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="pro-card">
+        <div class="pro-section-title">
+          <div>
+            <h2>Valuation Control Room</h2>
+            <p class="pro-status" id="valuationStatus">Review Tiingo fundamentals and AI-derived scoring.</p>
+          </div>
+        </div>
+        <div class="pro-grid-2">
+          <div>
+            <h3>Financial Healthboard</h3>
+            <div id="intelFinancials" class="pro-metric-grid"></div>
+          </div>
+          <div>
+            <h3>Valuation vs Market</h3>
+            <div id="intelValuation" class="pro-metric-grid"></div>
+          </div>
+        </div>
+        <div class="pro-divider"></div>
+        <div>
+          <h3>AI Synthesis</h3>
+          <p class="pro-status" id="intelAiSummary">AI commentary appears after a valuation refresh.</p>
+          <article id="intelAiNarrative" class="pro-status pro-empty">Awaiting selection…</article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./js/market-intel.js"></script>
+</body>
+</html>
