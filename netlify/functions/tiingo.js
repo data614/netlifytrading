@@ -230,6 +230,33 @@ const firstNonNull = (...values) => { for (const v of values) if (v != null) ret
 const formatDate = (d) => d.toISOString().split('T')[0];
 const minutesAgo = (mins) => { const d = new Date(); d.setMinutes(d.getMinutes() - mins); return d; };
 
+/* ------------------------- helpers: data-age meta ------------------------- */
+const latestTimestamp = (rows) => {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  let t = null;
+  for (const r of rows) {
+    const iso = r?.date || r?.timestamp;
+    if (!iso) continue;
+    const ms = Date.parse(iso);
+    if (!Number.isNaN(ms)) t = Math.max(t ?? ms, ms);
+  }
+  return t;
+};
+
+const computeMeta = (kind, fallback, rows) => {
+  // fallback: 'none' | 'eod' | 'mock'
+  const THRESHOLD_MIN = 20;
+  if (fallback === 'mock') return { dataAge: 'MOCK', source: 'mock' };
+  if (kind === 'eod' || kind === 'eod_latest') return { dataAge: 'EOD', source: 'eod' };
+  if (fallback === 'eod') return { dataAge: 'EOD_FALLBACK', source: 'eod' };
+
+  // intraday / intraday_latest without explicit fallback
+  const ts = latestTimestamp(rows);
+  const isRecent = ts != null ? (Date.now() - ts) <= THRESHOLD_MIN * 60 * 1000 : false;
+  return { dataAge: isRecent ? 'REALTIME' : 'DELAYED', source: 'realtime' };
+};
+/* ------------------------------------------------------------------------- */
+
 async function fetchTiingo(path, params, token) {
   const url = new URL(path, API_BASE);
   url.searchParams.set('token', token);
@@ -412,8 +439,23 @@ async function handleTiingoRequest(request) {
       const mockSeriesMode = overrideSeriesMode || seriesMode;
       data = generateMockSeries(target, limit || 30, mockSeriesMode);
     }
-    const body = { symbol: symbolParam, data, ...rest };
-    const responseInit = { ...init, headers: { ...corsHeaders, ...(init.headers || {}) } };
+
+    const meta = {
+      dataAge: 'MOCK',
+      source: 'mock',
+      checkedAt: new Date().toISOString(),
+    };
+
+    const body = { symbol: symbolParam, data, meta, ...rest };
+    const responseInit = {
+      ...init,
+      headers: {
+        ...corsHeaders,
+        'x-tiingo-data-age': meta.dataAge,
+        'x-tiingo-fallback': 'mock',
+        ...(init.headers || {}),
+      },
+    };
     return Response.json(body, responseInit);
   };
 
@@ -428,6 +470,7 @@ async function handleTiingoRequest(request) {
   try {
     let data = [];
     let warning = '';
+    let fallback = 'none'; // 'none' | 'eod' | 'mock'
 
     if (kind === 'intraday_latest') {
       let quoteMap = new Map();
@@ -490,9 +533,14 @@ async function handleTiingoRequest(request) {
         warningParts.push('Some symbols are using end-of-day fallback prices because real-time quotes were unavailable.');
       }
       if (warningParts.length) warning = warningParts.join(' ');
+
+      if (usedMockFallback) fallback = 'mock';
+      else if (usedEodFallback) fallback = 'eod';
+
     } else if (kind === 'eod_latest') {
       const eodMap = await loadEodLatest(requests, token);
       data = requests.map((req) => eodMap.get(req.symbol)).filter(Boolean);
+
     } else if (kind === 'intraday') {
       const target = requests[0] || { symbol: 'AAPL', ticker: 'AAPL', mic: '' };
       let intradayError = null;
@@ -504,15 +552,16 @@ async function handleTiingoRequest(request) {
         data = [];
       }
       if (!data.length) {
-        let fallback = [];
+        let fallbackData = [];
         try {
-          fallback = await loadEod(target, limit, token);
+          fallbackData = await loadEod(target, limit, token);
         } catch (err) {
           console.warn('tiingo end-of-day fallback failed', err);
-          fallback = [];
+          fallbackData = [];
         }
-        if (fallback.length) {
-          data = fallback;
+        if (fallbackData.length) {
+          data = fallbackData;
+          fallback = 'eod';
           warning = intradayError
             ? 'Real-time Tiingo intraday data is unavailable; showing end-of-day prices instead.'
             : 'Showing end-of-day prices because intraday data was unavailable.';
@@ -520,6 +569,7 @@ async function handleTiingoRequest(request) {
           warning = 'Real-time Tiingo intraday data is unavailable.';
         }
       }
+
     } else {
       const target = requests[0] || { symbol: 'AAPL', ticker: 'AAPL', mic: '' };
       data = await loadEod(target, limit, token);
@@ -532,24 +582,38 @@ async function handleTiingoRequest(request) {
       });
     }
 
-    const body = { symbol: symbolParam, data };
+    // Build meta + headers
+    const metaBase = computeMeta(kind, fallback, data);
+    const meta = { ...metaBase, checkedAt: new Date().toISOString() };
+
+    const headers = {
+      ...corsHeaders,
+      'x-tiingo-data-age': meta.dataAge,
+      ...(fallback === 'eod' ? { 'x-tiingo-fallback': 'eod' } : {}),
+    };
+
+    const body = { symbol: symbolParam, data, meta };
     if (warning) body.warning = warning;
-    return Response.json(body, { headers: corsHeaders });
+
+    return Response.json(body, { headers });
+
   } catch (err) {
-    return sendMock(
-      isQuoteRequest ? 'quotes' : 'series',
+    return Response.json(
       {
+        symbol: 'ERROR',
+        data: [],
         warning: 'Tiingo request failed. Showing sample data.',
         error: 'tiingo failed',
         detail: String(err),
-        seriesMode,
-        fallback: 'mock',
+        meta: { dataAge: 'MOCK', source: 'mock', checkedAt: new Date().toISOString() },
       },
       {
         status: 200,
         headers: {
+          ...corsHeaders,
           'x-tiingo-fallback': 'mock',
           'x-tiingo-error': 'true',
+          'x-tiingo-data-age': 'MOCK',
         },
       }
     );
@@ -573,5 +637,3 @@ export const handler = async (event) => {
 
   return { statusCode: response.status, headers, body: await response.text() };
 };
-
-
