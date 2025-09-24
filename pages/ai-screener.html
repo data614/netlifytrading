@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Screener — Professional Trading Desk</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="ai-pages.css" />
+</head>
+<body>
+  <div class="ai-shell">
+    <header class="ai-header">
+      <div>
+        <h1>AI Screener</h1>
+        <p class="ai-tagline">Design intelligent universes, surface catalysts and let ChatGPT 5 draft actionable playbooks. Pair Tiingo market structure with fundamentals and quality signals in seconds.</p>
+      </div>
+      <nav class="ai-nav">
+        <a href="../index.html">Core Desk</a>
+        <a class="active" href="ai-screener.html">AI Screener</a>
+        <a href="ai-research.html">AI Research Lab</a>
+      </nav>
+    </header>
+
+    <section class="ai-card">
+      <div class="ai-section-title">
+        <h2>Build a screen</h2>
+        <small class="ai-status" id="screenerStatus">Waiting for criteria…</small>
+      </div>
+      <div class="ai-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+        <label>
+          <span class="ai-muted">Universe search</span>
+          <input id="screenerSearch" class="ai-input" placeholder="Add tickers or keywords" autocomplete="off" />
+        </label>
+        <label>
+          <span class="ai-muted">Exchange</span>
+          <select id="screenerExchange" class="ai-select">
+            <option value="">All</option>
+            <option value="XNAS">NASDAQ</option>
+            <option value="XNYS">NYSE</option>
+            <option value="XASE">AMEX</option>
+            <option value="XASX">ASX</option>
+            <option value="XTSX">TSXV</option>
+            <option value="XTSE">TSX</option>
+            <option value="XHKG">HKEX</option>
+            <option value="XLON">LSE</option>
+          </select>
+        </label>
+        <label>
+          <span class="ai-muted">Min market cap (USD m)</span>
+          <input id="screenerMinCap" class="ai-input" type="number" min="0" step="100" placeholder="500" />
+        </label>
+        <label>
+          <span class="ai-muted">Max forward P/E</span>
+          <input id="screenerMaxPe" class="ai-input" type="number" min="0" step="1" placeholder="30" />
+        </label>
+        <label>
+          <span class="ai-muted">Min dividend yield (%)</span>
+          <input id="screenerMinYield" class="ai-input" type="number" min="0" max="25" step="0.1" placeholder="0" />
+        </label>
+        <label>
+          <span class="ai-muted">Momentum lookback (days)</span>
+          <input id="screenerMomentumWindow" class="ai-input" type="number" min="10" max="250" step="5" value="63" />
+        </label>
+      </div>
+      <div class="ai-search-results" id="screenerSearchResults"></div>
+      <div class="ai-flex">
+        <button class="ai-button" id="screenerRun"><i class="fa-solid fa-filter-circle-dollar"></i>&nbsp;Run screen</button>
+        <button class="ai-button" id="screenerClear" style="background:rgba(79,157,255,0.16);color:var(--ai-text);box-shadow:none;">Clear</button>
+      </div>
+    </section>
+
+    <section class="ai-card">
+      <div class="ai-section-title">
+        <h2>Screening universe</h2>
+        <small class="ai-status" id="screenerUniverseStatus">No selections yet.</small>
+      </div>
+      <table class="ai-table" id="screenerTable">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Name</th>
+            <th>Price</th>
+            <th>Fair value</th>
+            <th>Quality</th>
+            <th>Momentum</th>
+            <th>Yield</th>
+            <th>Score</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="ai-grid">
+      <article class="ai-card">
+        <div class="ai-section-title">
+          <h2>Portfolio intelligence</h2>
+          <small class="ai-status" id="screenerPortfolioStatus">Awaiting dataset…</small>
+        </div>
+        <div class="ai-compact-grid" id="screenerPortfolioStats"></div>
+      </article>
+      <article class="ai-card">
+        <div class="ai-section-title">
+          <h2>ChatGPT 5 watchlist brief</h2>
+          <small class="ai-status" id="screenerAiStatus">Ready</small>
+        </div>
+        <div class="ai-highlight" id="screenerAiOutput">Load a watchlist to draft a multi-asset playbook. The AI will rank opportunities, highlight event risk and flag dislocations.</div>
+        <button class="ai-button" id="screenerAiRun"><i class="fa-solid fa-lightbulb"></i>&nbsp;Generate playbook</button>
+      </article>
+    </section>
+  </div>
+
+  <footer class="ai-footer">Uses Tiingo fundamentals &amp; prices with AI overlays. Configure API keys to activate live data.</footer>
+
+  <script type="module" src="ai-utils.js"></script>
+  <script type="module" src="ai-screener.js"></script>
+</body>
+</html>
