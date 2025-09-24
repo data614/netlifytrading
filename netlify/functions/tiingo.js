@@ -622,6 +622,22 @@ async function handleTiingoRequest(request) {
 
 export default handleTiingoRequest;
 
+export {
+  resolveSymbolRequests,
+  buildTiingoTicker,
+  generateMockSeries,
+  generateMockQuotes,
+  normalizeQuote,
+  normalizeCandle,
+  loadIntraday,
+  loadEod,
+  loadIntradayLatest,
+  loadEodLatest,
+  fetchTiingo,
+  inferCurrency,
+  minutesForInterval,
+};
+
 // Netlify runtime compatibility
 export const handler = async (event) => {
   const rawQuery = event?.rawQuery ?? event?.rawQueryString ?? '';

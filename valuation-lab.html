@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Valuation Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="professional-desk.css" />
+</head>
+<body data-page="valuation">
+  <div class="prodesk-app">
+    <header class="prodesk-header">
+      <div class="brand">
+        <span class="brand-icon"><i class="fa-solid fa-rocket"></i></span>
+        <div>
+          <strong>Good Hope Markets</strong>
+          <small>AI Valuation Lab</small>
+        </div>
+      </div>
+      <nav class="prodesk-nav">
+        <a href="index.html">Primary Console</a>
+        <a href="professional-desk.html">Trading Desk</a>
+        <a href="valuation-lab.html" class="active">AI Valuation Lab</a>
+      </nav>
+      <div class="session-clock" id="pdSessionClock">—</div>
+    </header>
+
+    <div class="prodesk-status" id="pdStatus" role="status" aria-live="polite"></div>
+
+    <main class="prodesk-grid valuation-layout">
+      <section class="panel" aria-labelledby="valuationOverviewHeading">
+        <div class="panel-header">
+          <div>
+            <h1 id="valuationOverviewHeading">Equity Research Workbench</h1>
+            <p class="muted">Purpose-built environment for valuation discovery, peer benchmarking, and narrative review.</p>
+          </div>
+          <div class="search-control" data-component="symbol-search">
+            <label class="muted" for="valuation-symbol-input">Symbol or company</label>
+            <input id="valuation-symbol-input" data-symbol-input type="text" placeholder="Search ticker, company, or ASX:WOW" autocomplete="off" />
+            <div class="search-suggestions" data-symbol-suggestions></div>
+          </div>
+        </div>
+        <div class="panel-body valuation-summary">
+          <div class="valuation-header">
+            <div>
+              <div class="symbol-line">
+                <span id="pdSymbol" class="symbol">AAPL</span>
+                <span id="pdExchange" class="exchange">NASDAQ</span>
+                <span id="pdCurrency" class="currency">USD</span>
+              </div>
+              <div id="pdCompanyName" class="company-name">Apple Inc.</div>
+            </div>
+            <div class="price-line">
+              <span id="pdPrice" class="price">$—</span>
+              <span id="pdChange" class="change neutral">—</span>
+              <span id="pdChangePct" class="change-pct neutral">—</span>
+            </div>
+          </div>
+          <div class="valuation-key-stats">
+            <div>
+              <span class="stat-label">Fair Value</span>
+              <span id="pdFairValue" class="stat-value">—</span>
+            </div>
+            <div>
+              <span class="stat-label">Upside Potential</span>
+              <span id="vlUpside" class="stat-value">—</span>
+            </div>
+            <div>
+              <span class="stat-label">Downside Risk</span>
+              <span id="vlDownside" class="stat-value">—</span>
+            </div>
+            <div>
+              <span class="stat-label">Conviction</span>
+              <span id="vlConviction" class="stat-value">—</span>
+            </div>
+          </div>
+          <div class="snapshot-row" id="pdSnapshotRow" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="aiValuationHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="aiValuationHeading">ChatGPT 5 Valuation Narrative</h2>
+            <p class="muted">Deep dive into valuation reasoning with structured key drivers, risks, and scenario coverage.</p>
+          </div>
+          <div class="ai-actions">
+            <button type="button" class="btn-secondary" id="pdRunAiButton"><i class="fa-solid fa-robot"></i> Refresh insight</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="pdAiSummary" class="ai-summary">AI valuation pending…</div>
+          <div class="ai-grid">
+            <div>
+              <h3>Key Drivers</h3>
+              <ul id="pdAiDrivers"></ul>
+            </div>
+            <div>
+              <h3>Principal Risks</h3>
+              <ul id="pdAiRisks"></ul>
+            </div>
+          </div>
+          <div class="ai-recommendation" id="pdAiRecommendation"></div>
+          <div class="muted" id="pdValuationNote"></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="scenarioHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="scenarioHeading">Scenario Intelligence</h2>
+            <p class="muted">Probabilistic price path mapping for desk-level planning.</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <table class="data-table" id="pdScenarioTable"></table>
+          <div class="muted" id="pdRiskNote"></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="comparablesHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="comparablesHeading">Peer &amp; Factor Benchmarking</h2>
+            <p class="muted">Synthetic peer set built from Tiingo analytics, factor tilts, and AI adjustments.</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <table class="data-table" id="vlComparables">
+            <thead>
+              <tr>
+                <th>Peer</th>
+                <th>Profile</th>
+                <th>Implied Fair Value</th>
+                <th>Expected Return</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="vlComparablesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="catalystHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="catalystHeading">Catalyst &amp; Document Review</h2>
+            <p class="muted">Chronological log of upcoming events, recent filings, and must-read documents.</p>
+          </div>
+        </div>
+        <div class="panel-body catalysts-body">
+          <div>
+            <h3>Key Catalysts</h3>
+            <ul class="event-list" id="pdEventsList"></ul>
+          </div>
+          <div>
+            <h3>Regulatory Filings</h3>
+            <table class="filings-table">
+              <thead>
+                <tr>
+                  <th>Form</th>
+                  <th>Date</th>
+                  <th>Description</th>
+                  <th>Link</th>
+                </tr>
+              </thead>
+              <tbody id="pdFilingsList"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="prodesk-footer">
+      <p>Valuation Lab fuses deterministic modelling with ChatGPT 5 for adaptive market intelligence. Data quality is validated via comprehensive Tiingo integration tests.</p>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-4ir2oS1/6vCIxBxJDC1oS6bwyuMxSjo/73uh/gzYy/ufVQcPdkGFUTkOcJCIZy9l" crossorigin="anonymous"></script>
+  <script src="professional-desk.js" type="module"></script>
+</body>
+</html>

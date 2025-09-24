@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Professional Trading Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="professional-desk.css" />
+</head>
+<body data-page="desk">
+  <div class="prodesk-app">
+    <header class="prodesk-header">
+      <div class="brand">
+        <span class="brand-icon"><i class="fa-solid fa-chart-line"></i></span>
+        <div>
+          <strong>Good Hope Markets</strong>
+          <small>Professional Trading Desk</small>
+        </div>
+      </div>
+      <nav class="prodesk-nav">
+        <a href="index.html">Primary Console</a>
+        <a href="professional-desk.html" class="active">Trading Desk</a>
+        <a href="valuation-lab.html">AI Valuation Lab</a>
+      </nav>
+      <div class="session-clock" id="pdSessionClock">—</div>
+    </header>
+
+    <div class="prodesk-status" id="pdStatus" role="status" aria-live="polite"></div>
+
+    <main class="prodesk-grid">
+      <section class="panel panel-overview" aria-labelledby="overviewHeading">
+        <div class="panel-header">
+          <div>
+            <h1 id="overviewHeading">Share Intelligence Console</h1>
+            <p class="muted">Integrated screening, live pricing, events monitoring, and AI-assisted valuation.</p>
+          </div>
+          <div class="search-control" data-component="symbol-search">
+            <label class="muted" for="prodesk-symbol-input">Symbol or company</label>
+            <input id="prodesk-symbol-input" data-symbol-input type="text" placeholder="Search ticker, company, or ASX:WOW" autocomplete="off" />
+            <div class="search-suggestions" data-symbol-suggestions></div>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="primary-quote" role="presentation">
+            <div>
+              <div class="symbol-line">
+                <span id="pdSymbol" class="symbol">AAPL</span>
+                <span id="pdExchange" class="exchange">NASDAQ</span>
+                <span id="pdCurrency" class="currency">USD</span>
+              </div>
+              <div id="pdCompanyName" class="company-name">Apple Inc.</div>
+            </div>
+            <div class="price-line">
+              <span id="pdPrice" class="price">$—</span>
+              <span id="pdChange" class="change neutral">—</span>
+              <span id="pdChangePct" class="change-pct neutral">—</span>
+            </div>
+          </div>
+
+          <div class="overview-grid">
+            <div class="stat-block">
+              <div class="stat-label">Prev Close</div>
+              <div id="pdPrevClose" class="stat-value">—</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-label">Day Range</div>
+              <div id="pdDayRange" class="stat-value">—</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-label">52W Range</div>
+              <div id="pd52Week" class="stat-value">—</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-label">Volume (avg)</div>
+              <div id="pdVolume" class="stat-value">—</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-label">Volatility</div>
+              <div id="pdVolatility" class="stat-value">—</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-label">Momentum</div>
+              <div id="pdMomentum" class="stat-value">—</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-label">Fair Value (AI)</div>
+              <div id="pdFairValue" class="stat-value">—</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-label">Risk Score</div>
+              <div id="pdRiskScore" class="stat-value">—</div>
+            </div>
+          </div>
+
+          <div class="snapshot-row" id="pdSnapshotRow" aria-live="polite"></div>
+
+          <div class="insights" aria-live="polite">
+            <h3>Automated Insights</h3>
+            <ul id="pdInsights"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel panel-chart" aria-labelledby="chartHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="chartHeading">Price Action</h2>
+            <p class="muted">Interactive chart with regime detection across intraday and higher timeframes.</p>
+          </div>
+          <div class="timeframe-controls" id="pdTimeframes" role="tablist">
+            <button type="button" class="active" data-tf="1D">1D</button>
+            <button type="button" data-tf="1W">1W</button>
+            <button type="button" data-tf="1M">1M</button>
+            <button type="button" data-tf="3M">3M</button>
+            <button type="button" data-tf="6M">6M</button>
+            <button type="button" data-tf="1Y">1Y</button>
+            <button type="button" data-tf="2Y">2Y</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <canvas id="proDeskChart" aria-label="Price chart" role="img"></canvas>
+          <div class="panel-footnote" id="pdChartStatus"></div>
+          <div class="levels" id="pdKeyLevels"></div>
+        </div>
+      </section>
+
+      <section class="panel panel-events" aria-labelledby="eventsHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="eventsHeading">Event Radar</h2>
+            <p class="muted">Company events, earnings, and important catalysts pulled directly from Tiingo.</p>
+          </div>
+          <button type="button" class="btn-link" id="pdRefreshButton"><i class="fa-solid fa-rotate"></i> Refresh data</button>
+        </div>
+        <div class="panel-body">
+          <ul class="event-list" id="pdEventsList"></ul>
+        </div>
+      </section>
+
+      <section class="panel panel-docs" aria-labelledby="docsHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="docsHeading">Documents &amp; Filings</h2>
+            <p class="muted">Track regulatory filings and material company disclosures.</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <table class="filings-table">
+            <thead>
+              <tr>
+                <th>Form</th>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody id="pdFilingsList"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel panel-risk" aria-labelledby="riskHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="riskHeading">Risk &amp; Exposure Monitor</h2>
+            <p class="muted">Quantitative risk measures derived from Tiingo data with scenario stress testing.</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="risk-grid">
+            <div>
+              <h3>Risk Metrics</h3>
+              <table class="data-table" id="pdRiskMetrics"></table>
+            </div>
+            <div>
+              <h3>Scenario Map</h3>
+              <table class="data-table" id="pdScenarioTable"></table>
+            </div>
+          </div>
+          <div class="muted" id="pdRiskNote"></div>
+        </div>
+      </section>
+
+      <section class="panel panel-ai" aria-labelledby="aiHeading">
+        <div class="panel-header">
+          <div>
+            <h2 id="aiHeading">ChatGPT 5 Equity Intelligence</h2>
+            <p class="muted">AI-driven valuation and strategic guidance using company events, filings, and quantitative factors.</p>
+          </div>
+          <div class="ai-actions">
+            <button type="button" class="btn-secondary" id="pdRunAiButton"><i class="fa-solid fa-robot"></i> Re-run analysis</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="pdAiSummary" class="ai-summary">AI valuation pending…</div>
+          <div class="ai-grid">
+            <div>
+              <h3>Key Drivers</h3>
+              <ul id="pdAiDrivers"></ul>
+            </div>
+            <div>
+              <h3>Principal Risks</h3>
+              <ul id="pdAiRisks"></ul>
+            </div>
+          </div>
+          <div class="ai-recommendation" id="pdAiRecommendation"></div>
+          <div class="muted" id="pdValuationNote"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="prodesk-footer">
+      <p>Data sourced from Tiingo with intelligent fallbacks for coverage gaps. AI analysis utilises ChatGPT 5 or deterministic heuristics when OpenAI access is unavailable.</p>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-4ir2oS1/6vCIxBxJDC1oS6bwyuMxSjo/73uh/gzYy/ufVQcPdkGFUTkOcJCIZy9l" crossorigin="anonymous"></script>
+  <script src="professional-desk.js" type="module"></script>
+</body>
+</html>
