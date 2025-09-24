@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "clean": "rimraf build",
-    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data",
+    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css professional-desk.html valuation-lab.html professional-desk.js professional-desk.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data",
     "start": "npx netlify-cli@latest dev",
-    "generate:symbols": "node scripts/build-symbols.mjs"
+    "generate:symbols": "node scripts/build-symbols.mjs",
+    "test": "node --test"
   },
   "devDependencies": {
     "csv-parse": "^5.5.6",
