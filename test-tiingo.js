@@ -1,9 +1,12 @@
-// Usage: node test-tiingo.js
+﻿// Usage: node test-tiingo.js
 // Make sure your Netlify dev server is running: netlify dev
 
-const fetch = require('node-fetch');
-
 const LOCAL_TIINGO_URL = 'http://localhost:8888/api/tiingo?symbol=AAPL&kind=eod';
+
+if (typeof fetch !== 'function') {
+  console.error('Global fetch is unavailable. Please run this script with Node.js 18+ or newer.');
+  process.exit(1);
+}
 
 async function testTiingo() {
   console.log(`Testing local Tiingo endpoint: ${LOCAL_TIINGO_URL}`);
@@ -25,7 +28,6 @@ async function testTiingo() {
 
     if (Array.isArray(data.data)) {
       console.log(`Returned ${data.data.length} data points.`);
-      // Optionally print first data point
       console.log('First data point:', data.data[0]);
     }
   } catch (err) {
@@ -33,4 +35,4 @@ async function testTiingo() {
   }
 }
 
-testTiingo();
+await testTiingo();

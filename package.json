@@ -9,8 +9,9 @@
     "generate:symbols": "node scripts/build-symbols.mjs"
   },
   "devDependencies": {
-    "csv-parse": "^5.5.6",
     "cross-env": "^10.0.0",
+    "csv-parse": "^5.5.6",
+    "netlify-cli": "^23.7.2",
     "rimraf": "^6.0.1",
     "shx": "^0.4.0",
     "xlsx": "^0.18.5"
