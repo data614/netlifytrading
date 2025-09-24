@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Professional Trading Intelligence Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-oq0b0vnRZ4VfqakiobP6KyHR+Y6z+4dJVpaz6RtWLpmjHtkobaN6D+PfYZ7R6pujISiFDUFxIr05oig3FZp6jQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="pro-desk.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div class="hero-content">
+        <div>
+          <span class="eyebrow">AI-Augmented Command Center</span>
+          <h1>Professional Trading Desk &amp; Valuation Lab</h1>
+          <p>
+            Deep fundamental intelligence, event surveillance, and AI-guided valuation workflows built for
+            institutional-grade idea generation. Screen global equities, interrogate disclosures, and surface
+            fair value in real time with Tiingo market data and GPT-5 ready analytics.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <a class="btn primary" href="index.html"><i class="fa-solid fa-arrow-left"></i><span>Return to core terminal</span></a>
+          <a class="btn" href="#ai-screener"><i class="fa-solid fa-robot"></i><span>Jump to AI analyst</span></a>
+          <a class="btn" href="#valuation-lab"><i class="fa-solid fa-chart-line"></i><span>Open valuation lab</span></a>
+        </div>
+      </div>
+      <div class="hero-metrics" id="heroSnapshot">
+        <div class="metric">
+          <div class="metric-label">Symbol</div>
+          <div class="metric-value" id="heroSymbol">AAPL</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Last Price</div>
+          <div class="metric-value" id="heroPrice">—</div>
+          <div class="metric-sub" id="heroChange">—</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">AI Fair Value</div>
+          <div class="metric-value" id="heroFairValue">—</div>
+          <div class="metric-sub" id="heroUpside">—</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Confidence</div>
+          <div class="metric-value" id="heroConfidence">—</div>
+          <div class="metric-sub" id="heroConfidenceDetail">Awaiting analysis</div>
+        </div>
+      </div>
+    </header>
+
+    <nav class="sticky-nav">
+      <a href="#market-overview">Market radar</a>
+      <a href="#ai-screener">AI screening</a>
+      <a href="#event-intel">Event intelligence</a>
+      <a href="#document-lab">Document review</a>
+      <a href="#valuation-lab">Valuation lab</a>
+    </nav>
+
+    <main class="page-grid">
+      <section id="market-overview" class="panel">
+        <header class="panel-header">
+          <div>
+            <h2>Market radar</h2>
+            <p class="muted">Multi-timeframe charting, liquidity heat, and technical posture.</p>
+          </div>
+          <form id="symbolForm" class="symbol-form">
+            <label for="symbolInput" class="muted">Ticker</label>
+            <input id="symbolInput" name="symbol" placeholder="AAPL, MSFT, TSLA" autocomplete="off" />
+            <button class="btn primary" type="submit"><i class="fa-solid fa-chart-line"></i><span>Load</span></button>
+          </form>
+        </header>
+
+        <div class="panel-body">
+          <div class="chart-card card">
+            <div class="card-header">
+              <div>
+                <h3>Price structure</h3>
+                <div id="chartStatus" class="muted"></div>
+              </div>
+              <div class="timeframe-switcher" id="timeframeSwitcher">
+                <button data-tf="1D" class="active">1D</button>
+                <button data-tf="5D">5D</button>
+                <button data-tf="1M">1M</button>
+                <button data-tf="3M">3M</button>
+                <button data-tf="6M">6M</button>
+                <button data-tf="1Y">1Y</button>
+                <button data-tf="5Y">5Y</button>
+              </div>
+            </div>
+            <canvas id="deskChart" height="320"></canvas>
+          </div>
+
+          <div class="metrics-grid" id="marketMetrics">
+            <div class="metric-card">
+              <span class="metric-label">Annualized volatility</span>
+              <span class="metric-value" id="metricVolatility">—</span>
+              <span class="metric-sub" id="metricVolatilityDetail">Awaiting data</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Sharpe (signal)</span>
+              <span class="metric-value" id="metricSharpe">—</span>
+              <span class="metric-sub" id="metricSharpeDetail">—</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Max drawdown</span>
+              <span class="metric-value" id="metricDrawdown">—</span>
+              <span class="metric-sub" id="metricDrawdownDetail">—</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Liquidity</span>
+              <span class="metric-value" id="metricLiquidity">—</span>
+              <span class="metric-sub" id="metricLiquidityDetail">—</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Momentum regime</span>
+              <span class="metric-value" id="metricMomentum">—</span>
+              <span class="metric-sub" id="metricMomentumDetail">—</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Risk radar</span>
+              <span class="metric-value" id="metricRisk">—</span>
+              <span class="metric-sub" id="metricRiskDetail">—</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="ai-screener" class="panel">
+        <header class="panel-header">
+          <div>
+            <h2>AI multi-factor screening</h2>
+            <p class="muted">Let GPT-5-ready analytics synthesize fundamentals, flows, and qualitative catalysts.</p>
+          </div>
+        </header>
+        <div class="panel-body ai-grid">
+          <form id="aiScreenerForm" class="card ai-card">
+            <div class="form-row">
+              <label for="aiTickers">Universe <span class="muted">(comma separated tickers)</span></label>
+              <textarea id="aiTickers" rows="2" placeholder="AAPL, MSFT, NVDA"></textarea>
+            </div>
+            <div class="form-row">
+              <label for="aiFocus">Focus mandate</label>
+              <select id="aiFocus">
+                <option value="growth">High growth &amp; innovation</option>
+                <option value="value">Value &amp; margin of safety</option>
+                <option value="income">Income &amp; stability</option>
+                <option value="turnaround">Turnaround / event-driven</option>
+                <option value="esg">ESG-aligned</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="aiRisk">Risk tolerance</label>
+              <select id="aiRisk">
+                <option value="conservative">Conservative</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="aggressive">Aggressive</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="aiHorizon">Investment horizon</label>
+              <select id="aiHorizon">
+                <option value="short">0-3 months</option>
+                <option value="medium" selected>6-12 months</option>
+                <option value="long">3+ years</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="aiNotes">Additional mandates</label>
+              <textarea id="aiNotes" rows="3" placeholder="Prioritize AI infrastructure names with improving free cash flow margins."></textarea>
+            </div>
+            <button type="submit" class="btn primary"><i class="fa-solid fa-robot"></i><span>Launch GPT analyst</span></button>
+            <div id="aiScreenerStatus" class="status muted"></div>
+          </form>
+
+          <article class="card ai-output">
+            <header class="card-header">
+              <h3>AI guidance</h3>
+              <div id="aiScreenerModel" class="muted"></div>
+            </header>
+            <div id="aiScreenerOutput" class="ai-output-body"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="event-intel" class="panel">
+        <header class="panel-header">
+          <div>
+            <h2>Event intelligence</h2>
+            <p class="muted">Structured catalysts, filings, and sentiment-ranked news from Tiingo.</p>
+          </div>
+          <button class="btn" id="refreshEvents"><i class="fa-solid fa-rotate"></i><span>Refresh events</span></button>
+        </header>
+        <div class="panel-body">
+          <div id="eventStatus" class="muted"></div>
+          <div id="eventStream" class="event-stream"></div>
+        </div>
+      </section>
+
+      <section id="document-lab" class="panel">
+        <header class="panel-header">
+          <div>
+            <h2>Document intelligence lab</h2>
+            <p class="muted">Pull transcripts, filings, or investor updates and ask the AI desk to stress-test them.</p>
+          </div>
+        </header>
+        <div class="panel-body doc-grid">
+          <form id="documentForm" class="card">
+            <div class="form-row">
+              <label for="docUrl">Document URL <span class="muted">(10-K, press release, etc.)</span></label>
+              <input id="docUrl" type="url" placeholder="https://www.sec.gov/..." />
+            </div>
+            <div class="form-row">
+              <label for="docText">Document text</label>
+              <textarea id="docText" rows="10" placeholder="Paste disclosure text or fetch via URL"></textarea>
+            </div>
+            <div class="doc-actions">
+              <button type="button" class="btn" id="fetchDocument"><i class="fa-solid fa-file-arrow-down"></i><span>Fetch &amp; clean</span></button>
+              <button type="button" class="btn primary" id="analyzeDocument"><i class="fa-solid fa-magnifying-glass-chart"></i><span>AI review</span></button>
+            </div>
+            <div id="documentStatus" class="status muted"></div>
+          </form>
+          <article class="card ai-output">
+            <header class="card-header">
+              <h3>AI document briefing</h3>
+              <div id="documentModel" class="muted"></div>
+            </header>
+            <div id="documentAnalysis" class="ai-output-body"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="valuation-lab" class="panel">
+        <header class="panel-header">
+          <div>
+            <h2>Valuation lab</h2>
+            <p class="muted">DCF, multiples, and balance sheet diagnostics computed from Tiingo fundamentals.</p>
+          </div>
+        </header>
+        <div class="panel-body valuation-grid">
+          <article class="card">
+            <header class="card-header">
+              <h3>Summary</h3>
+            </header>
+            <div class="valuation-summary">
+              <div>
+                <span class="metric-label">Blended fair value</span>
+                <span class="metric-value" id="valuationFairValue">—</span>
+                <span class="metric-sub" id="valuationUpside">—</span>
+              </div>
+              <div>
+                <span class="metric-label">DCF range</span>
+                <span class="metric-value" id="valuationDcfRange">—</span>
+                <span class="metric-sub" id="valuationDcfNotes">—</span>
+              </div>
+              <div>
+                <span class="metric-label">Multiples composite</span>
+                <span class="metric-value" id="valuationMultiples">—</span>
+                <span class="metric-sub" id="valuationMultiplesNotes">—</span>
+              </div>
+              <div>
+                <span class="metric-label">Quality score</span>
+                <span class="metric-value" id="valuationQuality">—</span>
+                <span class="metric-sub" id="valuationQualityDetail">—</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <header class="card-header">
+              <h3>Key fundamentals</h3>
+            </header>
+            <table class="data-table" id="fundamentalsTable">
+              <thead>
+                <tr><th>Metric</th><th>Latest</th><th>Trend</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </article>
+
+          <article class="card">
+            <header class="card-header">
+              <h3>Assumptions</h3>
+            </header>
+            <ul class="assumption-list" id="assumptionList"></ul>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div>
+        <strong>Disclaimers</strong>
+        <p class="muted">Market data sourced from Tiingo. AI modules require an OpenAI API key configured as <code>OPENAI_API_KEY</code>. Outputs are research tools and not investment advice.</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://www.tiingo.com/" target="_blank" rel="noopener">Tiingo</a>
+        <a href="https://openai.com/" target="_blank" rel="noopener">OpenAI</a>
+        <a href="index.html">Legacy dashboard</a>
+      </div>
+    </footer>
+  </div>
+
+  <template id="eventTemplate">
+    <article class="event-card">
+      <header class="event-header">
+        <div>
+          <a class="event-title" href="#" target="_blank" rel="noopener"></a>
+          <div class="event-meta"></div>
+        </div>
+        <span class="event-score"></span>
+      </header>
+      <p class="event-summary"></p>
+      <footer class="event-footer"></footer>
+    </article>
+  </template>
+
+  <script type="module" src="pro-desk.js"></script>
+</body>
+</html>

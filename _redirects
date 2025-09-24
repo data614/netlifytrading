@@ -1,2 +1,4 @@
 /api/*  /.netlify/functions/:splat  200
+/pro-desk    /pro-desk.html            200
+/pro-desk/*  /pro-desk.html            200
 /*      /index.html                     200

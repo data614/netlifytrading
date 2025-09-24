@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "clean": "rimraf build",
-    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data",
+    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css pro-desk.html pro-desk.js pro-desk.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data && shx cp -r shared build/shared",
+    "test": "node --test",
     "start": "npx netlify-cli@latest dev",
     "generate:symbols": "node scripts/build-symbols.mjs"
   },
