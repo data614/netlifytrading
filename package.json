@@ -4,10 +4,9 @@
   "type": "module",
   "scripts": {
     "clean": "rimraf build",
-    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css _redirects build/ && shx cp -r pages build/pages && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data",
+    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data",
     "start": "npx netlify-cli@latest dev",
-    "generate:symbols": "node scripts/build-symbols.mjs",
-    "test": "node --test"
+    "generate:symbols": "node scripts/build-symbols.mjs"
   },
   "devDependencies": {
     "csv-parse": "^5.5.6",
