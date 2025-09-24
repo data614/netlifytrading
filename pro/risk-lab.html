@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Risk Lab — Scenario Studio</title>
+  <link rel="stylesheet" href="../app.css">
+  <link rel="stylesheet" href="pro.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="pro-shell">
+    <header class="pro-header">
+      <h1>Risk Analytics Laboratory</h1>
+      <nav class="pro-nav">
+        <a href="ai-desk.html">AI Desk</a>
+        <a href="market-intel.html">Market Intel</a>
+        <a href="risk-lab.html" class="active">Risk Lab</a>
+        <a href="../index.html" target="_blank" rel="noopener">Legacy Terminal</a>
+      </nav>
+    </header>
+
+    <main class="pro-content">
+      <section class="pro-card">
+        <div class="pro-section-title">
+          <div>
+            <h2>Volatility Surface</h2>
+            <p class="pro-status" id="riskStatus">Select a symbol and compare horizon-specific risk.</p>
+          </div>
+          <div class="pro-inline-form">
+            <input type="search" id="riskSearch" class="pro-input" placeholder="Search ticker" autocomplete="off">
+            <select id="riskHorizon" class="pro-select">
+              <option value="1M">1 Month</option>
+              <option value="3M" selected>3 Months</option>
+              <option value="6M">6 Months</option>
+              <option value="1Y">1 Year</option>
+              <option value="3Y">3 Years</option>
+            </select>
+          </div>
+        </div>
+        <div id="riskSearchResults" class="pro-search-results" hidden></div>
+        <div class="pro-grid-2" style="align-items:stretch;">
+          <div>
+            <canvas id="riskChart" style="height:320px"></canvas>
+            <p class="pro-status" id="riskChartStatus"></p>
+          </div>
+          <div id="riskMetrics" class="pro-metric-grid"></div>
+        </div>
+      </section>
+
+      <section class="pro-card">
+        <div class="pro-section-title">
+          <div>
+            <h2>Scenario Studio</h2>
+            <p class="pro-status" id="scenarioStatus">Simulate drawdowns, rallies, and custom stress events.</p>
+          </div>
+        </div>
+        <form id="scenarioForm" class="pro-grid-2">
+          <label>
+            <span class="pro-subtitle">Position Size (shares)</span>
+            <input type="number" id="scenarioPosition" class="pro-input" min="1" step="1" value="100">
+          </label>
+          <label>
+            <span class="pro-subtitle">Entry Price</span>
+            <input type="number" id="scenarioEntry" class="pro-input" step="0.01" placeholder="Auto from last price">
+          </label>
+          <label>
+            <span class="pro-subtitle">Scenario Move (%)</span>
+            <input type="number" id="scenarioMove" class="pro-input" step="0.5" value="-15">
+          </label>
+          <label>
+            <span class="pro-subtitle">Volatility Multiplier</span>
+            <input type="number" id="scenarioVol" class="pro-input" step="0.25" value="1.0">
+          </label>
+        </form>
+        <div class="pro-divider"></div>
+        <div class="pro-grid-2">
+          <div class="pro-stat-block">
+            <span class="label">Projected P&L</span>
+            <span id="scenarioPnL" class="value">—</span>
+            <span class="pro-status" id="scenarioPnLDetail"></span>
+          </div>
+          <div class="pro-stat-block">
+            <span class="label">Stress VaR (95%)</span>
+            <span id="scenarioVar" class="value">—</span>
+            <span class="pro-status" id="scenarioVarDetail"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pro-card">
+        <div class="pro-section-title">
+          <div>
+            <h2>Cross-Timeframe Diagnostics</h2>
+            <p class="pro-status">Review moving averages, skew, and kurtosis for risk governance.</p>
+          </div>
+        </div>
+        <div class="pro-grid-2">
+          <div>
+            <h3>Trend Signatures</h3>
+            <div id="riskTrend" class="pro-metric-grid"></div>
+          </div>
+          <div>
+            <h3>Distribution Analytics</h3>
+            <div id="riskDistribution" class="pro-metric-grid"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./js/risk-lab.js"></script>
+</body>
+</html>
