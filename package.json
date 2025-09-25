@@ -6,7 +6,9 @@
     "clean": "rimraf build",
     "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data",
     "start": "npx netlify-cli@latest dev",
-    "generate:symbols": "node scripts/build-symbols.mjs"
+    "generate:symbols": "node scripts/build-symbols.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "cross-env": "^10.0.0",
@@ -14,6 +16,7 @@
     "netlify-cli": "^23.7.2",
     "rimraf": "^6.0.1",
     "shx": "^0.4.0",
+    "vitest": "^3.2.4",
     "xlsx": "^0.18.5"
   }
 }

@@ -1,0 +1,473 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1725;
+  --surface: #142235;
+  --surface-alt: #1c2d46;
+  --border: rgba(255, 255, 255, 0.08);
+  --primary: #4ad7a8;
+  --primary-dark: #1ea57b;
+  --text: #f8f9fb;
+  --muted: #a7b3c5;
+  --danger: #ff6b6b;
+  --positive: #00c853;
+  --negative: #ff5252;
+  --neutral: #ffa000;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, rgba(74, 215, 168, 0.15), transparent 55%),
+    radial-gradient(circle at bottom right, rgba(118, 84, 255, 0.12), transparent 50%),
+    var(--bg);
+  color: var(--text);
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.2rem 2.4rem;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  background: rgba(10, 20, 34, 0.85);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.brand i {
+  color: var(--primary);
+}
+
+.primary-nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.primary-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.primary-nav a:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.primary-nav a.active {
+  color: var(--bg);
+  background: var(--primary);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 360px) 1fr;
+  gap: 1.8rem;
+  padding: 2rem 2.4rem 3rem;
+}
+
+.control-panel,
+.intel-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.card {
+  background: linear-gradient(160deg, rgba(20, 34, 53, 0.96), rgba(16, 29, 46, 0.92));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 1.6rem;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+}
+
+.card.large {
+  min-height: 260px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.card h2,
+.card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.control-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.field input,
+.field select,
+.field textarea {
+  padding: 0.7rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(15, 26, 40, 0.85);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.95rem;
+}
+
+.field textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.action-row {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.btn {
+  border-radius: 12px;
+  border: none;
+  padding: 0.75rem 1.1rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, var(--primary), #5cf0bd);
+  color: var(--bg);
+  box-shadow: 0 12px 25px rgba(74, 215, 168, 0.2);
+}
+
+.btn.ghost {
+  background: rgba(74, 215, 168, 0.1);
+  color: var(--primary);
+  border: 1px solid rgba(74, 215, 168, 0.3);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.status-message {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  min-height: 1.2rem;
+}
+
+.status-message.error {
+  color: var(--danger);
+}
+
+.status-message.info {
+  color: var(--muted);
+}
+
+.status-message.success {
+  color: var(--primary);
+}
+
+.valuation-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.valuation-item {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.valuation-item .label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.valuation-item .value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 0.2rem;
+  display: block;
+}
+
+.valuation-breakdown {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.ai-summary {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: pre-line;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(74, 215, 168, 0.15);
+  color: var(--primary);
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  border: 1px solid rgba(74, 215, 168, 0.3);
+}
+
+.split-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 1rem;
+}
+
+.timeline-time {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.timeline-title {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.timeline-body {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.document-list,
+.news-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.document-item {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  padding: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.document-title {
+  font-weight: 600;
+}
+
+.document-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.document-link:hover {
+  text-decoration: underline;
+}
+
+.document-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.news-item {
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.news-item.positive {
+  border-color: rgba(0, 200, 83, 0.45);
+}
+
+.news-item.negative {
+  border-color: rgba(255, 82, 82, 0.45);
+}
+
+.news-item.neutral {
+  border-color: rgba(255, 160, 0, 0.35);
+}
+
+.news-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.news-headline {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  margin: 0.4rem 0;
+  display: inline-block;
+}
+
+.news-summary {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.screener-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.screener-table th,
+.screener-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.screener-table th {
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  position: sticky;
+  top: 0;
+  background: rgba(16, 29, 46, 0.96);
+  backdrop-filter: blur(12px);
+  z-index: 1;
+}
+
+.screener-table tbody tr:hover {
+  background: rgba(74, 215, 168, 0.06);
+}
+
+.screener-table td.summary-cell {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-flex;
+}
+
+.dot.positive {
+  background: var(--positive);
+}
+
+.dot.neutral {
+  background: var(--neutral);
+}
+
+.dot.negative {
+  background: var(--negative);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+@media (max-width: 1080px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .top-bar {
+    flex-direction: column;
+    gap: 0.8rem;
+    align-items: flex-start;
+  }
+  .primary-nav {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 720px) {
+  body {
+    font-size: 0.95rem;
+  }
+  .layout {
+    padding: 1.5rem;
+  }
+  .card {
+    padding: 1.2rem;
+  }
+  .timeline-item {
+    grid-template-columns: 1fr;
+  }
+}

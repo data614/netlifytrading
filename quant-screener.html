@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quant Screener — AI Desk</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <link rel="stylesheet" href="ai-analyst.css" />
+</head>
+<body>
+  <header class="top-bar">
+    <div class="brand">
+      <i class="fa-solid fa-robot"></i>
+      <span>Quant Screener</span>
+    </div>
+    <nav class="primary-nav">
+      <a href="/ai-analyst.html">AI Copilot</a>
+      <a href="/quant-screener.html" class="active">Quant Screener</a>
+      <a href="/" target="_blank" rel="noopener">Legacy Desk</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="control-panel">
+      <div class="card">
+        <h2>Universe & filters</h2>
+        <label class="field">
+          <span>Ticker universe (comma or newline separated)</span>
+          <textarea id="universeInput" rows="8" placeholder="AAPL, MSFT, NVDA, TSLA, AMZN"></textarea>
+        </label>
+        <div class="control-grid" style="margin-top: 1rem;">
+          <label class="field">
+            <span>Minimum upside (%)</span>
+            <input id="upsideFilter" type="number" value="5" step="1" />
+          </label>
+          <label class="field">
+            <span>Maximum tickers per batch</span>
+            <input id="batchSize" type="number" value="6" min="1" max="20" />
+          </label>
+        </div>
+        <div class="action-row">
+          <button class="btn primary" id="runScreen"><i class="fa-solid fa-magnifying-glass-chart"></i> Screen universe</button>
+          <button class="btn ghost" id="downloadCsv"><i class="fa-solid fa-download"></i> Export CSV</button>
+        </div>
+        <div id="screenStatus" class="status-message"></div>
+      </div>
+
+      <div class="card">
+        <h2>Heatmap</h2>
+        <div id="heatmap" class="valuation-breakdown"></div>
+      </div>
+    </section>
+
+    <section class="intel-panel">
+      <div class="card large">
+        <div class="card-header">
+          <h2>Results</h2>
+          <span id="summaryChip" class="chip">—</span>
+        </div>
+        <div class="table-wrapper">
+          <table class="screener-table" id="screenerTable">
+            <thead>
+              <tr>
+                <th data-key="symbol">Symbol</th>
+                <th data-key="price">Price</th>
+                <th data-key="fairValue">Fair value</th>
+                <th data-key="upside">Upside</th>
+                <th data-key="momentum">Momentum</th>
+                <th data-key="summary">AI remark</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="quant-screener.js" type="module"></script>
+</body>
+</html>

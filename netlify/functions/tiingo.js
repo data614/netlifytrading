@@ -1,4 +1,5 @@
-import { getTiingoToken, getTiingoTokenDetail, TIINGO_TOKEN_ENV_KEYS } from './lib/env.js';
+import { getTiingoToken, TIINGO_TOKEN_ENV_KEYS } from './lib/env.js';
+import buildValuationSnapshot, { summarizeValuationNarrative, valuationUtils } from './lib/valuation.js';
 
 // --- Configuration & Constants ---
 
@@ -11,6 +12,10 @@ const INTRADAY_MS = 5 * 60 * 1000;
 const EOD_LOOKBACK_DAYS = 400;
 const DEFAULT_EOD_POINTS = 30;
 const DEFAULT_INTRADAY_POINTS = 150;
+const NEWS_LIMIT = 15;
+const DOCUMENT_LIMIT = 10;
+const FUNDAMENTAL_LIMIT = 4;
+const ACTION_LOOKBACK_DAYS = 365 * 2;
 
 // --- Mock Data Generators ---
 
@@ -21,7 +26,7 @@ const DEFAULT_INTRADAY_POINTS = 150;
  */
 function seed(s) {
   let v = 1;
-  for (let i = 0; i < s.length; i++) {
+  for (let i = 0; i < s.length; i += 1) {
     v = (v * 33 + s.charCodeAt(i)) >>> 0;
   }
   return () => {
@@ -51,7 +56,7 @@ function mockSeries(symbol = 'MOCK', points = 30, mode = 'eod') {
   const now = Date.now();
   const out = [];
 
-  for (let i = points - 1; i >= 0; i--) {
+  for (let i = points - 1; i >= 0; i -= 1) {
     const date = new Date(now - i * step);
     const open = round(previousPrice + (rng() - 0.5) * 3);
     const close = round(open + (rng() - 0.5) * 4);
@@ -79,6 +84,90 @@ function mockSeries(symbol = 'MOCK', points = 30, mode = 'eod') {
 
 /** Generates a single mock quote. */
 const mockQuote = (s) => mockSeries(s, 1, 'intraday')[0];
+
+const mockNews = (symbol, limit = NEWS_LIMIT) => {
+  const rng = seed(symbol);
+  const items = [];
+  for (let i = 0; i < limit; i += 1) {
+    const daysAgo = i * (1 + Math.floor(rng() * 3));
+    const publishedAt = new Date(Date.now() - daysAgo * DAY_MS).toISOString();
+    items.push({
+      id: `${symbol}-${i}`,
+      publishedAt,
+      headline: `${symbol} strategic update #${i + 1}`,
+      summary: `${symbol} released a mock announcement highlighting corporate developments and performance milestones.`,
+      url: `https://example.com/${symbol}/${i}`,
+      source: 'SampleWire',
+      sentiment: Math.round((rng() - 0.5) * 200) / 100,
+      tags: ['Mock', 'Demo'],
+    });
+  }
+  return items;
+};
+
+const mockFundamentals = (symbol) => {
+  const rng = seed(symbol);
+  const price = round(80 + rng() * 40);
+  const revenuePerShare = round(50 + rng() * 20);
+  const eps = round(4 + rng() * 2);
+  const fcfPerShare = round(3 + rng());
+  const bookValuePerShare = round(20 + rng() * 5);
+  const revenueGrowth = 0.08 + rng() * 0.04;
+  const epsGrowth = 0.1 + rng() * 0.03;
+  const fcfGrowth = 0.07 + rng() * 0.02;
+  const history = [];
+  for (let i = 3; i >= 0; i -= 1) {
+    history.push({
+      reportDate: new Date(Date.now() - i * 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      totalRevenue: revenuePerShare * 100000000,
+      netIncome: eps * 90000000,
+      freeCashFlow: fcfPerShare * 80000000,
+      bookValuePerShare,
+      eps,
+    });
+  }
+  return {
+    symbol,
+    latest: history[history.length - 1],
+    history,
+    metrics: {
+      price,
+      earningsPerShare: eps,
+      revenuePerShare,
+      freeCashFlowPerShare: fcfPerShare,
+      bookValuePerShare,
+      revenueGrowth,
+      epsGrowth,
+      fcfGrowth,
+      sharesOutstanding: 16000000000,
+    },
+  };
+};
+
+const mockActions = (symbol) => {
+  const today = Date.now();
+  return {
+    symbol,
+    dividends: [0, 1, 2].map((i) => ({
+      exDate: new Date(today - i * 90 * DAY_MS).toISOString().slice(0, 10),
+      amount: round(0.2 + i * 0.02),
+      payDate: new Date(today - (i * 90 - 15) * DAY_MS).toISOString().slice(0, 10),
+    })),
+    splits: [
+      {
+        exDate: new Date(today - 400 * DAY_MS).toISOString().slice(0, 10),
+        numerator: 4,
+        denominator: 1,
+      },
+    ],
+  };
+};
+
+const mockDocuments = (symbol, limit = DOCUMENT_LIMIT) => mockNews(symbol, limit).map((item, index) => ({
+  ...item,
+  headline: `${symbol} regulatory filing ${index + 1}`,
+  documentType: index % 2 === 0 ? '10-Q' : '10-K',
+}));
 
 // --- API Helpers ---
 
@@ -142,30 +231,14 @@ function ok(body) {
   return Response.json(body, { headers: { ...corsHeaders, ...metaHeaders() } });
 }
 
-/**
- * Creates a mock data JSON response with a warning.
- * @param {object} body - Information for generating the mock data.
- * @returns {Response}
- */
-function mock(body) {
-  const data = body.mode === 'quotes'
-    ? [mockQuote(body.symbol)]
-    : mockSeries(body.symbol, body.limit, body.mode === 'intraday' ? 'intraday' : 'eod');
-
-  const responseBody = {
-    symbol: body.symbol || 'MOCK',
-    data,
-    warning: body.warning || 'Tiingo data unavailable. Showing sample data.',
-  };
-
+const mockResponse = (symbol, mode, warning, data) => {
   const headers = {
     ...corsHeaders,
     ...metaHeaders(),
     'x-tiingo-fallback': 'mock',
   };
-
-  return Response.json(responseBody, { headers });
-}
+  return Response.json({ symbol, data, warning: warning || 'Tiingo data unavailable. Showing sample data.' }, { headers });
+};
 
 // --- Data Loading Functions ---
 
@@ -176,14 +249,14 @@ function mock(body) {
  * @param {string} token - The Tiingo API token.
  * @returns {Promise<object[]>}
  */
-async function loadEod(symbol, limit, token) {
+export async function loadEod(symbol, limit, token) {
   const count = Math.max(Number(limit) || DEFAULT_EOD_POINTS, 1);
   const startDate = new Date(Date.now() - EOD_LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
 
   const rows = await tiingo(
     `/tiingo/daily/${encodeURIComponent(symbol)}/prices`,
     { startDate, resampleFreq: 'daily' },
-    token
+    token,
   );
 
   const list = Array.isArray(rows) ? rows.slice(-count) : [];
@@ -212,7 +285,7 @@ async function loadEod(symbol, limit, token) {
  * @param {string} token - The Tiingo API token.
  * @returns {Promise<object[]>}
  */
-async function loadIntraday(symbol, interval, limit, token) {
+export async function loadIntraday(symbol, interval, limit, token) {
   const freq = interval || '5min';
   const count = Math.max(Number(limit) || DEFAULT_INTRADAY_POINTS, 1);
   const stepMins = freq === '30min' ? 30 : freq === '1hour' ? 60 : 5;
@@ -222,7 +295,7 @@ async function loadIntraday(symbol, interval, limit, token) {
   const rows = await tiingo(
     `/iex/${encodeURIComponent(symbol)}/prices`,
     { startDate, resampleFreq: freq },
-    token
+    token,
   );
 
   const list = Array.isArray(rows) ? rows.slice(-count) : [];
@@ -249,7 +322,7 @@ async function loadIntraday(symbol, interval, limit, token) {
  * @param {string} token - The Tiingo API token.
  * @returns {Promise<object|null>}
  */
-async function loadIntradayLatest(symbol, token) {
+export async function loadIntradayLatest(symbol, token) {
   const data = await tiingo('/iex', { tickers: symbol }, token);
   const row = Array.isArray(data) ? data.find((r) => (r.ticker || r.symbol || '').toUpperCase() === symbol.toUpperCase()) : null;
 
@@ -274,6 +347,222 @@ async function loadIntradayLatest(symbol, token) {
   };
 }
 
+const toNumber = (value) => {
+  const num = valuationUtils.toNumber ? valuationUtils.toNumber(value) : Number(value);
+  if (Number.isFinite(num)) return num;
+  return null;
+};
+
+const growthRate = (current, previous) => {
+  const cur = toNumber(current);
+  const prev = toNumber(previous);
+  if (cur === null || prev === null || Math.abs(prev) < 1e-6) return null;
+  return (cur - prev) / Math.abs(prev);
+};
+
+export async function loadFundamentals(symbol, token, limit = FUNDAMENTAL_LIMIT) {
+  const count = Math.max(1, Math.min(Number(limit) || FUNDAMENTAL_LIMIT, 12));
+  const rows = await tiingo(
+    `/tiingo/fundamentals/${encodeURIComponent(symbol)}/daily`,
+    { limit: count },
+    token,
+  );
+  const list = Array.isArray(rows) ? rows.filter((item) => item && typeof item === 'object') : [];
+  list.sort((a, b) => new Date(a.reportDate || a.endDate || a.date || 0) - new Date(b.reportDate || b.endDate || b.date || 0));
+  const history = list.slice(-count);
+  const latest = history[history.length - 1] || null;
+  const prev = history.length > 1 ? history[history.length - 2] : null;
+
+  if (!latest) {
+    return { symbol, latest: null, history: [], metrics: {} };
+  }
+
+  const shares = toNumber(latest.sharesBasic) || toNumber(latest.sharesOutstanding) || toNumber(latest.sharesDiluted) || null;
+  const revenue = toNumber(latest.totalRevenue) ?? toNumber(latest.revenue);
+  const netIncome = toNumber(latest.netIncome) ?? toNumber(latest.netIncomeApplicableToCommon);
+  const freeCashFlow = toNumber(latest.freeCashFlow ?? latest.cashFlowOperatingActivities ?? latest.operatingCashFlow);
+  const eps = toNumber(latest.eps) ?? toNumber(latest.epsDiluted) ?? (shares ? (netIncome ?? 0) / shares : null);
+  const revenuePerShare = shares && revenue !== null ? revenue / shares : toNumber(latest.revenuePerShare);
+  const fcfPerShare = shares && freeCashFlow !== null ? freeCashFlow / shares : toNumber(latest.freeCashFlowPerShare);
+  const bookValuePerShare = toNumber(latest.bookValuePerShare) ?? (shares && toNumber(latest.totalEquity) !== null
+    ? toNumber(latest.totalEquity) / shares
+    : null);
+
+  const revenueGrowth = growthRate(revenue, prev?.totalRevenue ?? prev?.revenue) ?? toNumber(latest.revenueGrowth);
+  const epsGrowth = growthRate(eps, toNumber(prev?.eps) ?? toNumber(prev?.epsDiluted)) ?? toNumber(latest.epsGrowth);
+  const fcfGrowth = growthRate(fcfPerShare, prev && shares
+    ? (toNumber(prev.freeCashFlow ?? prev.cashFlowOperatingActivities ?? prev.operatingCashFlow) ?? null) /
+      (toNumber(prev.sharesBasic) || toNumber(prev.sharesOutstanding) || toNumber(prev.sharesDiluted) || 1)
+    : null) ?? toNumber(latest.cashFlowGrowth);
+
+  return {
+    symbol,
+    latest,
+    history,
+    metrics: {
+      sharesOutstanding: shares,
+      revenue,
+      netIncome,
+      freeCashFlow,
+      earningsPerShare: eps,
+      revenuePerShare,
+      freeCashFlowPerShare: fcfPerShare,
+      bookValuePerShare,
+      revenueGrowth,
+      epsGrowth,
+      fcfGrowth,
+    },
+  };
+}
+
+const mapNewsItem = (item) => ({
+  id: String(item.id || item.articleID || `${item.publishedDate}-${item.url}` || Math.random()),
+  headline: item.title || item.headline || item.description || '',
+  summary: item.summary || item.description || '',
+  url: item.url || item.sourceUrl || '',
+  source: item.source || item.sourceName || item.provider || '',
+  publishedAt: item.publishedDate || item.date || item.timestamp || new Date().toISOString(),
+  sentiment: toNumber(item.sentiment) ?? null,
+  tags: Array.isArray(item.tags) ? item.tags : [],
+});
+
+export async function loadCompanyNews(symbol, limit, token) {
+  const count = Math.max(1, Math.min(Number(limit) || NEWS_LIMIT, 50));
+  const rows = await tiingo(
+    '/tiingo/news',
+    { tickers: symbol, limit: count, sortBy: 'publishedDate', includeBody: false },
+    token,
+  );
+  const items = Array.isArray(rows) ? rows.map(mapNewsItem) : [];
+  items.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+  return items.slice(0, count);
+}
+
+export async function loadCompanyDocuments(symbol, limit, token) {
+  const count = Math.max(1, Math.min(Number(limit) || DOCUMENT_LIMIT, 50));
+  const rows = await tiingo(
+    '/tiingo/news',
+    { tickers: symbol, limit: count * 2, sortBy: 'publishedDate', tags: 'SEC', includeBody: false },
+    token,
+  );
+  const items = (Array.isArray(rows) ? rows : [])
+    .map(mapNewsItem)
+    .filter((item) => item.tags.some((tag) => /sec|filing|10-|earnings/i.test(tag)) || /10-|sec|filing/i.test(item.headline));
+  if (!items.length) {
+    return (Array.isArray(rows) ? rows : []).slice(0, count).map(mapNewsItem);
+  }
+  items.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+  return items.slice(0, count).map((item) => ({
+    ...item,
+    documentType: item.tags.find((tag) => /10-|20-|8-/i.test(tag)) || 'Filing',
+  }));
+}
+
+export async function loadCorporateActions(symbol, token) {
+  const startDate = new Date(Date.now() - ACTION_LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const [dividendsRaw, splitsRaw] = await Promise.all([
+    tiingo(`/tiingo/daily/${encodeURIComponent(symbol)}/dividends`, { startDate }, token).catch(() => []),
+    tiingo(`/tiingo/daily/${encodeURIComponent(symbol)}/splits`, { startDate }, token).catch(() => []),
+  ]);
+  const dividends = Array.isArray(dividendsRaw)
+    ? dividendsRaw.map((d) => ({
+      exDate: d.exDate || d.payDate || d.recordDate || '',
+      amount: toNumber(d.amount) ?? toNumber(d.cashAmount) ?? null,
+      payDate: d.payDate || '',
+      recordDate: d.recordDate || '',
+      currency: d.currency || 'USD',
+    }))
+    : [];
+
+  const splits = Array.isArray(splitsRaw)
+    ? splitsRaw.map((s) => ({
+      exDate: s.exDate || s.payDate || '',
+      numerator: toNumber(s.numerator) ?? toNumber(s.ratio) ?? null,
+      denominator: toNumber(s.denominator) ?? 1,
+    }))
+    : [];
+
+  return { symbol, dividends, splits };
+}
+
+export async function loadValuation(symbol, token) {
+  const [quote, fundamentals] = await Promise.all([
+    loadIntradayLatest(symbol, token).catch(() => null),
+    loadFundamentals(symbol, token).catch(() => null),
+  ]);
+
+  const metrics = fundamentals?.metrics || {};
+  const price = quote?.price ?? metrics.price ?? fundamentals?.latest?.close ?? fundamentals?.latest?.adjClose ?? null;
+
+  const valuation = buildValuationSnapshot({
+    price,
+    earningsPerShare: metrics.earningsPerShare,
+    revenuePerShare: metrics.revenuePerShare,
+    freeCashFlowPerShare: metrics.freeCashFlowPerShare,
+    bookValuePerShare: metrics.bookValuePerShare,
+    revenueGrowth: metrics.revenueGrowth,
+    epsGrowth: metrics.epsGrowth,
+    fcfGrowth: metrics.fcfGrowth,
+  });
+
+  const narrative = summarizeValuationNarrative(symbol, valuation);
+
+  return {
+    symbol,
+    price,
+    quote,
+    fundamentals,
+    valuation,
+    narrative,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// --- Mock handler ---
+
+function mock(kind, symbol, limit, warning) {
+  const upper = (symbol || 'MOCK').toUpperCase();
+  if (kind === 'news') {
+    return mockResponse(upper, kind, warning, mockNews(upper, limit));
+  }
+  if (kind === 'fundamentals') {
+    return mockResponse(upper, kind, warning, mockFundamentals(upper));
+  }
+  if (kind === 'documents') {
+    return mockResponse(upper, kind, warning, mockDocuments(upper, limit));
+  }
+  if (kind === 'actions') {
+    return mockResponse(upper, kind, warning, mockActions(upper));
+  }
+  if (kind === 'valuation') {
+    const fundamentals = mockFundamentals(upper);
+    const valuation = buildValuationSnapshot({
+      price: fundamentals.metrics.price,
+      earningsPerShare: fundamentals.metrics.earningsPerShare,
+      revenuePerShare: fundamentals.metrics.revenuePerShare,
+      freeCashFlowPerShare: fundamentals.metrics.freeCashFlowPerShare,
+      bookValuePerShare: fundamentals.metrics.bookValuePerShare,
+      revenueGrowth: fundamentals.metrics.revenueGrowth,
+      epsGrowth: fundamentals.metrics.epsGrowth,
+      fcfGrowth: fundamentals.metrics.fcfGrowth,
+    });
+    return mockResponse(upper, kind, warning, {
+      symbol: upper,
+      price: fundamentals.metrics.price,
+      fundamentals,
+      valuation,
+      narrative: summarizeValuationNarrative(upper, valuation),
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
+  const mode = kind === 'intraday_latest' ? 'quotes' : kind;
+  const data = mode === 'quotes'
+    ? [mockQuote(upper)]
+    : mockSeries(upper, limit, mode === 'intraday' ? 'intraday' : 'eod');
+  return mockResponse(upper, kind, warning, data);
+}
+
 // --- Main Request Handler ---
 
 /**
@@ -290,7 +579,7 @@ async function handleTiingoRequest(request) {
 
   const token = getTiingoToken();
   if (!token) {
-    return mock({ symbol, mode: kind, limit, warning: 'Tiingo API key missing. Showing sample data.' });
+    return mock(kind, symbol, limit, 'Tiingo API key missing. Showing sample data.');
   }
 
   try {
@@ -299,12 +588,11 @@ async function handleTiingoRequest(request) {
       if (quote) {
         return ok({ symbol, data: [quote] });
       }
-      // Fallback: try to get latest EOD if latest quote fails
       const eod = await loadEod(symbol, 1, token).catch(() => []);
       if (eod.length) {
         return ok({ symbol, data: [eod[0]], warning: 'Intraday latest unavailable; showing EOD.' });
       }
-      return mock({ symbol, mode: 'quotes', warning: 'Real-time quotes unavailable. Showing sample data.' });
+      return mock(kind, symbol, limit, 'Intraday latest unavailable. Showing sample data.');
     }
 
     if (kind === 'intraday') {
@@ -312,24 +600,61 @@ async function handleTiingoRequest(request) {
       if (rows.length) {
         return ok({ symbol, data: rows });
       }
-      // Fallback: try to get EOD if intraday fails
       const eod = await loadEod(symbol, limit, token).catch(() => []);
       if (eod.length) {
         return ok({ symbol, data: eod, warning: 'Intraday unavailable; showing EOD.' });
       }
-      return mock({ symbol, mode: 'intraday', limit, warning: 'Intraday unavailable. Showing sample data.' });
+      return mock(kind, symbol, limit, 'Intraday unavailable. Showing sample data.');
     }
 
-    // Default to EOD
+    if (kind === 'news') {
+      const news = await loadCompanyNews(symbol, limit, token);
+      if (news.length) {
+        return ok({ symbol, data: news });
+      }
+      return mock(kind, symbol, limit, 'Company news unavailable. Showing sample data.');
+    }
+
+    if (kind === 'documents') {
+      const docs = await loadCompanyDocuments(symbol, limit, token);
+      if (docs.length) {
+        return ok({ symbol, data: docs });
+      }
+      return mock(kind, symbol, limit, 'Company filings unavailable. Showing sample data.');
+    }
+
+    if (kind === 'fundamentals') {
+      const fundamentals = await loadFundamentals(symbol, token, limit);
+      if (fundamentals.latest) {
+        return ok({ symbol, data: fundamentals });
+      }
+      return mock(kind, symbol, limit, 'Fundamentals unavailable. Showing sample data.');
+    }
+
+    if (kind === 'actions') {
+      const actions = await loadCorporateActions(symbol, token);
+      if ((actions.dividends && actions.dividends.length) || (actions.splits && actions.splits.length)) {
+        return ok({ symbol, data: actions });
+      }
+      return mock(kind, symbol, limit, 'Corporate actions unavailable. Showing sample data.');
+    }
+
+    if (kind === 'valuation') {
+      const valuation = await loadValuation(symbol, token);
+      if (valuation) {
+        return ok({ symbol, data: valuation });
+      }
+      return mock(kind, symbol, limit, 'Valuation snapshot unavailable. Showing sample data.');
+    }
+
     const rows = await loadEod(symbol, limit, token);
     if (rows.length) {
       return ok({ symbol, data: rows });
     }
-    return mock({ symbol, mode: 'eod', limit, warning: 'EOD unavailable. Showing sample data.' });
-
+    return mock(kind, symbol, limit, 'EOD unavailable. Showing sample data.');
   } catch (err) {
     console.error(`Tiingo request failed for ${symbol}:`, err);
-    return mock({ symbol, mode: kind, limit, warning: 'Tiingo request failed. Showing sample data.' });
+    return mock(kind, symbol, limit, 'Tiingo request failed. Showing sample data.');
   }
 }
 
@@ -359,7 +684,6 @@ export const handler = async (event) => {
 
   const response = await handleTiingoRequest(request);
 
-  // Convert Fetch Response headers to a plain object for Netlify
   const headers = {};
   response.headers.forEach((value, key) => {
     headers[key] = value;
@@ -370,4 +694,13 @@ export const handler = async (event) => {
     headers,
     body: await response.text(),
   };
+};
+
+export const __private = {
+  mockSeries,
+  mockQuote,
+  mockNews,
+  mockFundamentals,
+  mockActions,
+  mockDocuments,
 };
