@@ -1,0 +1,14 @@
+{
+    "url":  "https://example.com/aapl/10q",
+    "summary":  "Quarterly report",
+    "id":  "aapl-doc-1",
+    "source":  "SEC",
+    "headline":  "AAPL 10-Q Filing",
+    "sentiment":  null,
+    "publishedAt":  "2024-08-05T00:00:00.000Z",
+    "documentType":  "10-Q",
+    "tags":  [
+                 "SEC",
+                 "10-Q"
+             ]
+}

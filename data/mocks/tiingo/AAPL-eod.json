@@ -1,0 +1,44 @@
+[
+    {
+        "high":  192.3,
+        "symbol":  "AAPL",
+        "low":  189.5,
+        "price":  191.8,
+        "exchange":  "NASDAQ",
+        "previousClose":  190,
+        "close":  191.8,
+        "last":  191.8,
+        "date":  "2024-09-25T00:00:00.000Z",
+        "open":  190.1,
+        "currency":  "USD",
+        "volume":  51234567
+    },
+    {
+        "high":  193,
+        "symbol":  "AAPL",
+        "low":  190.9,
+        "price":  192.4,
+        "exchange":  "NASDAQ",
+        "previousClose":  191.8,
+        "close":  192.4,
+        "last":  192.4,
+        "date":  "2024-09-26T00:00:00.000Z",
+        "open":  191.7,
+        "currency":  "USD",
+        "volume":  49876543
+    },
+    {
+        "high":  194,
+        "symbol":  "AAPL",
+        "low":  191.6,
+        "price":  193.5,
+        "exchange":  "NASDAQ",
+        "previousClose":  192.4,
+        "close":  193.5,
+        "last":  193.5,
+        "date":  "2024-09-27T00:00:00.000Z",
+        "open":  192.4,
+        "currency":  "USD",
+        "volume":  52345678
+    }
+]

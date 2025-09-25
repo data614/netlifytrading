@@ -1,0 +1,42 @@
+{
+    "history":  [
+                    {
+                        "bookValuePerShare":  4.4,
+                        "reportDate":  "2024-03-31",
+                        "netIncome":  23000000000,
+                        "totalRevenue":  115000000000,
+                        "eps":  1.1,
+                        "freeCashFlow":  17000000000
+                    },
+                    {
+                        "bookValuePerShare":  4.5,
+                        "reportDate":  "2024-06-30",
+                        "netIncome":  25000000000,
+                        "totalRevenue":  125000000000,
+                        "eps":  1.2,
+                        "freeCashFlow":  18000000000
+                    }
+                ],
+    "metrics":  {
+                    "freeCashFlowPerShare":  1.15,
+                    "bookValuePerShare":  4.5,
+                    "netIncome":  25000000000,
+                    "earningsPerShare":  1.2,
+                    "sharesOutstanding":  15600000000,
+                    "fcfGrowth":  0.059,
+                    "epsGrowth":  0.091,
+                    "revenuePerShare":  8.01,
+                    "revenueGrowth":  0.087,
+                    "revenue":  125000000000,
+                    "freeCashFlow":  18000000000
+                },
+    "symbol":  "AAPL",
+    "latest":  {
+                   "bookValuePerShare":  4.5,
+                   "reportDate":  "2024-06-30",
+                   "netIncome":  25000000000,
+                   "totalRevenue":  125000000000,
+                   "eps":  1.2,
+                   "freeCashFlow":  18000000000
+               }
+}

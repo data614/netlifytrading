@@ -1,0 +1,27 @@
+[
+    {
+        "id":  "aapl-1",
+        "headline":  "AAPL launches new product",
+        "publishedAt":  "2024-09-27T12:00:00.000Z",
+        "tags":  [
+                     "Product",
+                     "Launch"
+                 ],
+        "url":  "https://example.com/aapl/1",
+        "source":  "SampleWire",
+        "summary":  "Latest product update and features.",
+        "sentiment":  0.2
+    },
+    {
+        "id":  "aapl-2",
+        "headline":  "AAPL quarterly update",
+        "publishedAt":  "2024-09-26T12:00:00.000Z",
+        "tags":  [
+                     "Earnings"
+                 ],
+        "url":  "https://example.com/aapl/2",
+        "source":  "SampleWire",
+        "summary":  "Company reports solid earnings.",
+        "sentiment":  0.1
+    }
+]
