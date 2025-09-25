@@ -222,22 +222,42 @@ function metaHeaders() {
   };
 }
 
-/**
- * Creates a standard success JSON response.
- * @param {object} body - The response body.
- * @returns {Response}
- */
-function ok(body) {
-  return Response.json(body, { headers: { ...corsHeaders, ...metaHeaders() } });
+/** Merge `meta` onto the body with a normalized `source` flag. */
+function withMeta(body, source, extraMeta = {}) {
+  return { ...body, meta: { ...(body.meta || {}), source, ...extraMeta } };
 }
 
-const mockResponse = (symbol, mode, warning, data) => {
+/**
+ * Creates a standard success JSON response with an explicit data source.
+ * @param {object} body - The response body.
+ * @param {'live'|'eod-fallback'|'mock'} source - Where the data came from.
+ * @param {object} [extraHeaders] - Extra headers to include.
+ * @param {object} [extraMeta] - Extra meta fields to include.
+ * @returns {Response}
+ */
+function ok(body, source = 'live', extraHeaders = {}, extraMeta = {}) {
   const headers = {
     ...corsHeaders,
     ...metaHeaders(),
+    'X-Tiingo-Source': source,
+    ...extraHeaders,
+  };
+  return Response.json(withMeta(body, source, extraMeta), { headers });
+}
+
+const mockResponse = (symbol, mode, warning, data, meta = {}) => {
+  const headers = {
+    ...corsHeaders,
+    ...metaHeaders(),
+    'X-Tiingo-Source': 'mock',
     'x-tiingo-fallback': 'mock',
   };
-  return Response.json({ symbol, data, warning: warning || 'Tiingo data unavailable. Showing sample data.' }, { headers });
+  const body = {
+    symbol,
+    data,
+    warning: warning || 'Tiingo data unavailable. Showing sample data.',
+  };
+  return Response.json(withMeta(body, 'mock', { kind: mode, ...meta }), { headers });
 };
 
 // --- Data Loading Functions ---
@@ -520,21 +540,26 @@ export async function loadValuation(symbol, token) {
 
 // --- Mock handler ---
 
-function mock(kind, symbol, limit, warning) {
+function mock(kind, symbol, limit, warning, meta) {
   const upper = (symbol || 'MOCK').toUpperCase();
   if (kind === 'news') {
-    return mockResponse(upper, kind, warning, mockNews(upper, limit));
+    console.warn(`[tiingo] ${upper}(${kind}): using MOCK data (${meta?.reason || 'unknown'})`);
+    return mockResponse(upper, kind, warning, mockNews(upper, limit), meta);
   }
   if (kind === 'fundamentals') {
-    return mockResponse(upper, kind, warning, mockFundamentals(upper));
+    console.warn(`[tiingo] ${upper}(${kind}): using MOCK data (${meta?.reason || 'unknown'})`);
+    return mockResponse(upper, kind, warning, mockFundamentals(upper), meta);
   }
   if (kind === 'documents') {
-    return mockResponse(upper, kind, warning, mockDocuments(upper, limit));
+    console.warn(`[tiingo] ${upper}(${kind}): using MOCK data (${meta?.reason || 'unknown'})`);
+    return mockResponse(upper, kind, warning, mockDocuments(upper, limit), meta);
   }
   if (kind === 'actions') {
-    return mockResponse(upper, kind, warning, mockActions(upper));
+    console.warn(`[tiingo] ${upper}(${kind}): using MOCK data (${meta?.reason || 'unknown'})`);
+    return mockResponse(upper, kind, warning, mockActions(upper), meta);
   }
   if (kind === 'valuation') {
+    console.warn(`[tiingo] ${upper}(${kind}): using MOCK data (${meta?.reason || 'unknown'})`);
     const fundamentals = mockFundamentals(upper);
     const valuation = buildValuationSnapshot({
       price: fundamentals.metrics.price,
@@ -553,14 +578,16 @@ function mock(kind, symbol, limit, warning) {
       valuation,
       narrative: summarizeValuationNarrative(upper, valuation),
       generatedAt: new Date().toISOString(),
-    });
+    }, meta);
   }
 
   const mode = kind === 'intraday_latest' ? 'quotes' : kind;
   const data = mode === 'quotes'
     ? [mockQuote(upper)]
     : mockSeries(upper, limit, mode === 'intraday' ? 'intraday' : 'eod');
-  return mockResponse(upper, kind, warning, data);
+
+  console.warn(`[tiingo] ${upper}(${kind}): using MOCK data (${meta?.reason || 'unknown'})`);
+  return mockResponse(upper, kind, warning, data, meta);
 }
 
 // --- Main Request Handler ---
@@ -579,82 +606,105 @@ async function handleTiingoRequest(request) {
 
   const token = getTiingoToken();
   if (!token) {
-    return mock(kind, symbol, limit, 'Tiingo API key missing. Showing sample data.');
+    console.warn(`[tiingo] ${symbol}(${kind}): no Tiingo token found. Checked keys: ${TIINGO_TOKEN_ENV_KEYS.join(', ')}`);
+    return mock(kind, symbol, limit, 'Tiingo API key missing. Showing sample data.', {
+      reason: 'missing_token',
+      envKeysChecked: TIINGO_TOKEN_ENV_KEYS,
+    });
   }
 
   try {
     if (kind === 'intraday_latest') {
       const quote = await loadIntradayLatest(symbol, token);
       if (quote) {
-        return ok({ symbol, data: [quote] });
+        return ok({ symbol, data: [quote] }, 'live');
       }
       const eod = await loadEod(symbol, 1, token).catch(() => []);
       if (eod.length) {
-        return ok({ symbol, data: [eod[0]], warning: 'Intraday latest unavailable; showing EOD.' });
+        console.warn(`[tiingo] ${symbol}(${kind}): intraday latest unavailable -> EOD fallback`);
+        return ok(
+          { symbol, data: [eod[0]], warning: 'Intraday latest unavailable; showing EOD.' },
+          'eod-fallback',
+          {},
+          { reason: 'intraday_latest_unavailable' },
+        );
       }
-      return mock(kind, symbol, limit, 'Intraday latest unavailable. Showing sample data.');
+      return mock(kind, symbol, limit, 'Intraday latest unavailable. Showing sample data.', {
+        reason: 'intraday_latest_unavailable_and_no_eod',
+      });
     }
 
     if (kind === 'intraday') {
       const rows = await loadIntraday(symbol, interval, limit, token);
       if (rows.length) {
-        return ok({ symbol, data: rows });
+        return ok({ symbol, data: rows }, 'live');
       }
       const eod = await loadEod(symbol, limit, token).catch(() => []);
       if (eod.length) {
-        return ok({ symbol, data: eod, warning: 'Intraday unavailable; showing EOD.' });
+        console.warn(`[tiingo] ${symbol}(${kind}): intraday unavailable -> EOD fallback`);
+        return ok(
+          { symbol, data: eod, warning: 'Intraday unavailable; showing EOD.' },
+          'eod-fallback',
+          {},
+          { reason: 'intraday_unavailable' },
+        );
       }
-      return mock(kind, symbol, limit, 'Intraday unavailable. Showing sample data.');
+      return mock(kind, symbol, limit, 'Intraday unavailable. Showing sample data.', {
+        reason: 'intraday_unavailable_and_no_eod',
+      });
     }
 
     if (kind === 'news') {
       const news = await loadCompanyNews(symbol, limit, token);
       if (news.length) {
-        return ok({ symbol, data: news });
+        return ok({ symbol, data: news }, 'live');
       }
-      return mock(kind, symbol, limit, 'Company news unavailable. Showing sample data.');
+      return mock(kind, symbol, limit, 'Company news unavailable. Showing sample data.', { reason: 'news_unavailable' });
     }
 
     if (kind === 'documents') {
       const docs = await loadCompanyDocuments(symbol, limit, token);
       if (docs.length) {
-        return ok({ symbol, data: docs });
+        return ok({ symbol, data: docs }, 'live');
       }
-      return mock(kind, symbol, limit, 'Company filings unavailable. Showing sample data.');
+      return mock(kind, symbol, limit, 'Company filings unavailable. Showing sample data.', { reason: 'documents_unavailable' });
     }
 
     if (kind === 'fundamentals') {
       const fundamentals = await loadFundamentals(symbol, token, limit);
       if (fundamentals.latest) {
-        return ok({ symbol, data: fundamentals });
+        return ok({ symbol, data: fundamentals }, 'live');
       }
-      return mock(kind, symbol, limit, 'Fundamentals unavailable. Showing sample data.');
+      return mock(kind, symbol, limit, 'Fundamentals unavailable. Showing sample data.', { reason: 'fundamentals_unavailable' });
     }
 
     if (kind === 'actions') {
       const actions = await loadCorporateActions(symbol, token);
       if ((actions.dividends && actions.dividends.length) || (actions.splits && actions.splits.length)) {
-        return ok({ symbol, data: actions });
+        return ok({ symbol, data: actions }, 'live');
       }
-      return mock(kind, symbol, limit, 'Corporate actions unavailable. Showing sample data.');
+      return mock(kind, symbol, limit, 'Corporate actions unavailable. Showing sample data.', { reason: 'actions_unavailable' });
     }
 
     if (kind === 'valuation') {
       const valuation = await loadValuation(symbol, token);
       if (valuation) {
-        return ok({ symbol, data: valuation });
+        return ok({ symbol, data: valuation }, 'live');
       }
-      return mock(kind, symbol, limit, 'Valuation snapshot unavailable. Showing sample data.');
+      return mock(kind, symbol, limit, 'Valuation snapshot unavailable. Showing sample data.', { reason: 'valuation_unavailable' });
     }
 
     const rows = await loadEod(symbol, limit, token);
     if (rows.length) {
-      return ok({ symbol, data: rows });
+      return ok({ symbol, data: rows }, 'live');
     }
-    return mock(kind, symbol, limit, 'EOD unavailable. Showing sample data.');
+    return mock(kind, symbol, limit, 'EOD unavailable. Showing sample data.', { reason: 'eod_unavailable' });
   } catch (err) {
     console.error(`Tiingo request failed for ${symbol}:`, err);
-    return mock(kind, symbol, limit, 'Tiingo request failed. Showing sample data.');
+    return mock(kind, symbol, limit, 'Tiingo request failed. Showing sample data.', {
+      reason: 'exception',
+      message: err?.message?.slice(0, 200) || String(err),
+    });
   }
 }
 
