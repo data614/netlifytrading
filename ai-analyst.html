@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Analyst Desk</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <link rel="stylesheet" href="ai-analyst.css" />
+</head>
+<body>
+  <header class="top-bar">
+    <div class="brand">
+      <i class="fa-solid fa-chart-line"></i>
+      <span>AI Analyst Desk</span>
+    </div>
+    <nav class="primary-nav">
+      <a href="/ai-analyst.html" class="active">AI Copilot</a>
+      <a href="/quant-screener.html">Quant Screener</a>
+      <a href="/" target="_blank" rel="noopener">Legacy Desk</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="control-panel">
+      <div class="card">
+        <h2>Symbol intelligence</h2>
+        <div class="control-grid">
+          <label class="field">
+            <span>Ticker</span>
+            <input id="tickerInput" type="text" value="AAPL" placeholder="Enter ticker (e.g. AAPL, MSFT, TSLA)" />
+          </label>
+          <label class="field">
+            <span>Lookback candles</span>
+            <input id="lookbackInput" type="number" min="20" max="500" step="10" value="120" />
+          </label>
+          <label class="field">
+            <span>Timeframe</span>
+            <select id="timeframeSelect">
+              <option value="1M">1 Month</option>
+              <option value="3M" selected>3 Months</option>
+              <option value="6M">6 Months</option>
+              <option value="1Y">1 Year</option>
+            </select>
+          </label>
+        </div>
+        <div class="action-row">
+          <button id="runAnalysis" class="btn primary"><i class="fa-solid fa-play"></i> Run AI review</button>
+          <button id="exportReport" class="btn ghost"><i class="fa-solid fa-file-export"></i> Export snapshot</button>
+        </div>
+        <div id="statusMessage" class="status-message"></div>
+      </div>
+
+      <div class="card">
+        <h2>AI valuation radar</h2>
+        <div class="valuation-grid" id="valuationGrid">
+          <div class="valuation-item">
+            <span class="label">Last price</span>
+            <span class="value" id="valuationPrice">—</span>
+          </div>
+          <div class="valuation-item">
+            <span class="label">Fair value</span>
+            <span class="value" id="valuationFair">—</span>
+          </div>
+          <div class="valuation-item">
+            <span class="label">Upside</span>
+            <span class="value" id="valuationUpside">—</span>
+          </div>
+          <div class="valuation-item">
+            <span class="label">Safety entry</span>
+            <span class="value" id="valuationEntry">—</span>
+          </div>
+        </div>
+        <div class="valuation-breakdown" id="valuationBreakdown"></div>
+      </div>
+    </section>
+
+    <section class="intel-panel">
+      <div class="card large">
+        <div class="card-header">
+          <h2>ChatGPT‑5 Analyst Summary</h2>
+          <span id="intelTimestamp" class="muted small"></span>
+        </div>
+        <p id="aiNarrative" class="ai-summary">Run an analysis to generate the AI narrative.</p>
+      </div>
+
+      <div class="card large">
+        <div class="card-header">
+          <h2>Price evolution</h2>
+          <div class="chip" id="priceOverview">—</div>
+        </div>
+        <canvas id="priceChart"></canvas>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <div class="card-header">
+            <h3>Key events</h3>
+          </div>
+          <ul id="timeline" class="timeline"></ul>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Regulatory documents</h3>
+          </div>
+          <ul id="documents" class="document-list"></ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>News flow</h3>
+          <div class="legend">
+            <span class="legend-item"><span class="dot positive"></span> Positive</span>
+            <span class="legend-item"><span class="dot neutral"></span> Neutral</span>
+            <span class="legend-item"><span class="dot negative"></span> Negative</span>
+          </div>
+        </div>
+        <ul id="newsList" class="news-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <template id="timelineItemTemplate">
+    <li class="timeline-item">
+      <div class="timeline-time"></div>
+      <div class="timeline-content">
+        <div class="timeline-title"></div>
+        <div class="timeline-body"></div>
+      </div>
+    </li>
+  </template>
+
+  <template id="newsItemTemplate">
+    <li class="news-item">
+      <div class="news-meta">
+        <span class="news-source"></span>
+        <span class="news-date"></span>
+      </div>
+      <a class="news-headline" target="_blank" rel="noopener"></a>
+      <p class="news-summary"></p>
+    </li>
+  </template>
+
+  <template id="documentItemTemplate">
+    <li class="document-item">
+      <div class="document-title"></div>
+      <a class="document-link" target="_blank" rel="noopener">Open</a>
+      <div class="document-meta"></div>
+    </li>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+  <script src="ai-analyst.js" type="module"></script>
+</body>
+</html>
