@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,14 +6,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataPath = path.resolve(__dirname, '../../../data/symbols.json');
 
-// Lazy async loader for dataset
-let datasetCache = null;
-async function getDataset() {
-  if (datasetCache) return datasetCache;
-  const data = await fs.promises.readFile(dataPath, 'utf8');
-  datasetCache = JSON.parse(data);
-  return datasetCache;
+// Load dataset synchronously at module init so exports remain synchronous
+let dataset;
+try {
+  const json = fs.readFileSync(dataPath, 'utf8');
+  dataset = JSON.parse(json);
+} catch (e) {
+  dataset = { symbols: [] };
 }
+
 const MIC_PREFIXES = {
   XNAS: ['NASDAQ', 'US', 'USA'],
   XNYS: ['NYSE', 'US', 'USA'],
