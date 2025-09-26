@@ -1,6 +1,8 @@
 import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
 import { createScreenPreferenceStore } from './utils/persistent-screen-preferences.js';
 import { computeRow, passesFilters, screenUniverse, suggestConcurrency } from './utils/quant-screener-core.js';
+import { computeAggregateMetrics, createEmptyAggregateMetrics } from './utils/quant-screener-analytics.js';
+import { createRunHistoryStore } from './utils/screen-run-history.js';
 import createAsyncCache from './utils/cache.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -93,6 +95,28 @@ const preferenceStore = createScreenPreferenceStore({
     sort: DEFAULT_SORT,
   },
 });
+
+const runHistoryStore = createRunHistoryStore();
+let latestMetrics = createEmptyAggregateMetrics();
+
+const runtimeBridge = {
+  getLatestMetrics: () => ({
+    ...latestMetrics,
+    bestUpside: latestMetrics.bestUpside ? { ...latestMetrics.bestUpside } : null,
+    worstUpside: latestMetrics.worstUpside ? { ...latestMetrics.worstUpside } : null,
+    bestMomentum: latestMetrics.bestMomentum ? { ...latestMetrics.bestMomentum } : null,
+    sectorLeaders: latestMetrics.sectorLeaders.map((leader) => ({ ...leader })),
+  }),
+  getRunHistory: () => runHistoryStore.list(),
+};
+
+function publishRuntimeBridge() {
+  if (typeof window === 'undefined') return;
+  const namespace = window.netlifyTrading || (window.netlifyTrading = {});
+  namespace.quantScreener = runtimeBridge;
+}
+
+publishRuntimeBridge();
 
 async function fetchIntel(symbol) {
   return intelCache.get(symbol, async () => {
@@ -357,13 +381,83 @@ function applyFilters({ silent = false } = {}) {
   }
 }
 
+function assignSummaryChipDataset(chip, metrics) {
+  const assign = (key, value) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      delete chip.dataset[key];
+      return;
+    }
+    chip.dataset[key] = typeof value === 'number' ? String(value) : String(value);
+  };
+
+  assign('count', metrics.count ?? 0);
+  assign('avgUpside', metrics.avgUpside);
+  assign('medianUpside', metrics.medianUpside);
+  assign('positiveUpsideCount', metrics.positiveUpsideCount ?? 0);
+  assign('negativeUpsideCount', metrics.negativeUpsideCount ?? 0);
+  assign('zeroUpsideCount', metrics.zeroUpsideCount ?? 0);
+  assign('totalMarketCap', metrics.totalMarketCap);
+  assign('averageMarketCap', metrics.averageMarketCap);
+  assign('momentumAverage', metrics.momentumAverage);
+  assign('momentumMedian', metrics.momentumMedian);
+
+  if (metrics.bestUpside) {
+    assign('bestUpsideSymbol', metrics.bestUpside.symbol);
+    assign('bestUpsideValue', metrics.bestUpside.value);
+  } else {
+    delete chip.dataset.bestUpsideSymbol;
+    delete chip.dataset.bestUpsideValue;
+  }
+
+  if (metrics.worstUpside) {
+    assign('worstUpsideSymbol', metrics.worstUpside.symbol);
+    assign('worstUpsideValue', metrics.worstUpside.value);
+  } else {
+    delete chip.dataset.worstUpsideSymbol;
+    delete chip.dataset.worstUpsideValue;
+  }
+
+  if (metrics.bestMomentum) {
+    assign('bestMomentumSymbol', metrics.bestMomentum.symbol);
+    assign('bestMomentumValue', metrics.bestMomentum.value);
+  } else {
+    delete chip.dataset.bestMomentumSymbol;
+    delete chip.dataset.bestMomentumValue;
+  }
+
+  if (metrics.sectorLeaders && metrics.sectorLeaders.length) {
+    assign(
+      'topSectors',
+      JSON.stringify(
+        metrics.sectorLeaders.map((leader) => ({
+          name: leader.name,
+          count: leader.count,
+          weight: leader.weight,
+          averageUpside: leader.averageUpside,
+        }))
+      )
+    );
+  } else {
+    delete chip.dataset.topSectors;
+  }
+}
+
 function updateSummary(rows) {
+  const chip = $('#summaryChip');
+  if (!chip) return;
+
+  latestMetrics = computeAggregateMetrics(rows);
+  assignSummaryChipDataset(chip, latestMetrics);
+
   if (!rows.length) {
-    $('#summaryChip').textContent = '0 matches';
+    chip.textContent = '0 matches';
+    publishRuntimeBridge();
     return;
   }
-  const avgUpside = rows.reduce((acc, row) => acc + (Number(row.upside) || 0), 0) / rows.length;
-  $('#summaryChip').textContent = `${rows.length} matches · Avg upside ${fmtPercent(avgUpside)}`;
+
+  const avgUpsideDisplay = Number.isFinite(latestMetrics.avgUpside) ? latestMetrics.avgUpside : 0;
+  chip.textContent = `${rows.length} matches · Avg upside ${fmtPercent(avgUpsideDisplay)}`;
+  publishRuntimeBridge();
 }
 
 function setStatus(message, tone = 'info') {
@@ -397,7 +491,7 @@ async function runScreen() {
   const concurrency = suggestConcurrency(universe.length);
   const startTime = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
 
-  const { matches, processed, reachedCap } = await screenUniverse(universe, {
+  const { matches, processed, reachedCap, errors } = await screenUniverse(universe, {
     fetchIntel,
     computeRow,
     passesFilters: (row) => passesFilters(row, filters),
@@ -446,15 +540,31 @@ async function runScreen() {
 
   const finishedTime = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
   const durationMs = finishedTime - startTime;
+  const normalizedDuration = Number.isFinite(durationMs) ? Math.round(durationMs) : null;
+  const runTimestamp = Date.now();
   persistPreferences({
     lastRun: {
-      timestamp: Date.now(),
+      timestamp: runTimestamp,
       universeCount: universe.length,
       matchesCount: currentResults.length,
       reachedCap,
-      durationMs: Number.isFinite(durationMs) ? Math.round(durationMs) : null,
+      durationMs: normalizedDuration,
     },
   });
+
+  runHistoryStore.record({
+    timestamp: runTimestamp,
+    universeCount: universe.length,
+    matches: currentResults.length,
+    durationMs: normalizedDuration,
+    reachedCap,
+    errorCount: Array.isArray(errors) ? errors.length : 0,
+    filters: latestFilters,
+    sort: currentSort,
+    universeSample: universe,
+    metrics: latestMetrics,
+  });
+  publishRuntimeBridge();
 
   if (!currentResults.length) {
     renderHeatmap([]);
