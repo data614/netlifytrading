@@ -11,3 +11,4 @@ AI Analyst, Quant Screener, Valuation Lab, and Professional Desk experiences.
 ### Documentation
 
 - Platform usage guide: [`docs/platform-user-guide.md`](docs/platform-user-guide.md)
+- Production deployment & retrospective: [`docs/production-deployment-retrospective.md`](docs/production-deployment-retrospective.md)
