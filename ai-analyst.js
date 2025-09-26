@@ -12,6 +12,18 @@ const fmtPercent = (value) => {
   return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
 };
 
+const fmtMultiple = (value, digits = 1) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return `${num.toFixed(digits)}×`;
+};
+
+const fmtRatio = (value, digits = 2) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return num.toFixed(digits);
+};
+
 const fmtDate = (iso) => {
   const date = iso ? new Date(iso) : null;
   if (!date || Number.isNaN(date.getTime())) return '—';
@@ -21,7 +33,35 @@ const fmtDate = (iso) => {
 const isFiniteNumber = (value) =>
   value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
 
+const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max);
+
+const scorePositive = (value, floor, ceiling) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || ceiling === floor) return null;
+  const normalized = (num - floor) / (ceiling - floor);
+  return clamp(normalized);
+};
+
+const scoreInverse = (value, floor, ceiling) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || ceiling === floor) return null;
+  const normalized = 1 - (num - floor) / (ceiling - floor);
+  return clamp(normalized);
+};
+
+const describeScore = (score) => {
+  if (!Number.isFinite(score)) {
+    return { label: 'Pending', tone: 'caution' };
+  }
+  if (score >= 80) return { label: 'Strong', tone: 'positive' };
+  if (score >= 60) return { label: 'Constructive', tone: 'positive' };
+  if (score >= 40) return { label: 'Balanced', tone: 'caution' };
+  if (score >= 20) return { label: 'Stretched', tone: 'negative' };
+  return { label: 'At risk', tone: 'negative' };
+};
+
 let priceChart;
+let valuationRadarChart;
 let lastAnalysis = null;
 let runButtonDefaultHtml = '';
 
@@ -33,16 +73,23 @@ function extractValuationMetrics(valuationData = {}) {
   const entry = valuation?.suggestedEntry ?? valuation?.valuation?.suggestedEntry ?? valuationData?.suggestedEntry;
   const breakdown = valuation?.valuation?.components || valuation?.components || {};
   const fundamentals = valuationData?.fundamentals || valuation?.fundamentals || null;
+  const marginOfSafety = valuation?.marginOfSafety ?? valuation?.valuation?.marginOfSafety ?? null;
+  const growth = valuation?.growth ?? valuation?.valuation?.growth ?? {};
+  const scenarios = valuation?.scenarios ?? valuation?.valuation?.scenarios ?? {};
 
-  return { price, fairValue, upside, entry, breakdown, fundamentals };
+  return { price, fairValue, upside, entry, breakdown, fundamentals, marginOfSafety, growth, scenarios };
 }
 
-function resetValuationCard(message = 'Awaiting valuation inputs from Tiingo fundamentals.') {
+function resetValuationCard(
+  message = 'Awaiting valuation inputs from Tiingo fundamentals.',
+  radarMessage,
+) {
   $('#valuationPrice').textContent = '—';
   $('#valuationFair').textContent = '—';
   $('#valuationUpside').textContent = '—';
   $('#valuationEntry').textContent = '—';
   $('#valuationBreakdown').textContent = message;
+  resetValuationRadar(radarMessage || message);
 }
 
 function resetPriceChart(message = 'Awaiting price data.') {
@@ -207,6 +254,268 @@ function renderChart(rows = []) {
         y: {
           ticks: { color: '#a7b3c5' },
           grid: { color: 'rgba(255,255,255,0.08)' },
+        },
+      },
+    },
+  });
+}
+
+function resetValuationRadar(message = 'Awaiting valuation radar intelligence.') {
+  const placeholder = $('#valuationRadarEmpty');
+  if (placeholder) {
+    placeholder.textContent = message;
+    placeholder.classList.remove('hidden');
+  }
+  const legend = $('#valuationRadarLegend');
+  if (legend) {
+    legend.innerHTML = '';
+  }
+  const canvas = $('#valuationRadarChart');
+  if (canvas) {
+    canvas.style.display = 'none';
+  }
+  if (valuationRadarChart) {
+    valuationRadarChart.destroy();
+    valuationRadarChart = null;
+  }
+}
+
+function computeValuationRadarMetrics(analysis = {}) {
+  const valuationData = analysis?.valuation || analysis;
+  const quantMetrics = analysis?.quant
+    || analysis?.quantMetrics
+    || valuationData?.quant
+    || analysis?.tiingo?.data?.quant
+    || analysis?.tiingo?.data?.quantMetrics
+    || {};
+
+  const { upside, marginOfSafety, growth } = extractValuationMetrics(valuationData || {});
+
+  const baseGrowth = isFiniteNumber(growth?.base) ? Number(growth.base) : null;
+  const margin = isFiniteNumber(marginOfSafety) ? Number(marginOfSafety) : null;
+  const upsideValue = isFiniteNumber(upside) ? Number(upside) : null;
+
+  const pe = isFiniteNumber(quantMetrics.priceToEarnings) ? Number(quantMetrics.priceToEarnings) : null;
+  const ps = isFiniteNumber(quantMetrics.priceToSales) ? Number(quantMetrics.priceToSales) : null;
+  const fcfYield = isFiniteNumber(quantMetrics.freeCashFlowYield)
+    ? Number(quantMetrics.freeCashFlowYield)
+    : null;
+  const debtToEquity = isFiniteNumber(quantMetrics.debtToEquity)
+    ? Number(quantMetrics.debtToEquity)
+    : null;
+  const netDebtToEBITDA = isFiniteNumber(quantMetrics.netDebtToEBITDA)
+    ? Number(quantMetrics.netDebtToEBITDA)
+    : null;
+  const roe = isFiniteNumber(quantMetrics.returnOnEquity)
+    ? Number(quantMetrics.returnOnEquity)
+    : null;
+
+  const leverageScores = [];
+  if (debtToEquity !== null) leverageScores.push(scoreInverse(debtToEquity, 0.4, 2.5));
+  if (netDebtToEBITDA !== null) leverageScores.push(scoreInverse(netDebtToEBITDA, 0.5, 4));
+  const validLeverageScores = leverageScores.filter((value) => Number.isFinite(value));
+  const leverageScore = validLeverageScores.length
+    ? validLeverageScores.reduce((sum, value) => sum + value, 0) / validLeverageScores.length
+    : null;
+
+  const metrics = [
+    {
+      id: 'upside',
+      label: 'Upside potential',
+      valueText: upsideValue !== null ? fmtPercent(upsideValue * 100) : '—',
+      detail: 'Fair value premium to market price.',
+      score: upsideValue !== null ? scorePositive(upsideValue, -0.2, 0.5) : null,
+    },
+    {
+      id: 'safety',
+      label: 'Margin of safety',
+      valueText: margin !== null ? fmtPercent(margin * 100) : '—',
+      detail: 'Discount buffer embedded in Tiingo valuation.',
+      score: margin !== null ? scorePositive(margin, 0, 0.35) : null,
+    },
+    {
+      id: 'growth',
+      label: 'Base growth outlook',
+      valueText: baseGrowth !== null ? fmtPercent(baseGrowth * 100) : '—',
+      detail: 'Mid-case growth implied by valuation model.',
+      score: baseGrowth !== null ? scorePositive(baseGrowth, -0.05, 0.15) : null,
+    },
+    {
+      id: 'pe',
+      label: 'P/E advantage',
+      valueText: pe !== null ? fmtMultiple(pe) : '—',
+      detail: 'Earnings multiple relative to price.',
+      score: pe !== null ? scoreInverse(pe, 10, 40) : null,
+    },
+    {
+      id: 'ps',
+      label: 'P/S discipline',
+      valueText: ps !== null ? fmtMultiple(ps) : '—',
+      detail: 'Revenue multiple competitiveness.',
+      score: ps !== null ? scoreInverse(ps, 1.5, 10) : null,
+    },
+    {
+      id: 'fcf',
+      label: 'Free cash flow yield',
+      valueText: fcfYield !== null ? fmtPercent(fcfYield * 100) : '—',
+      detail: 'Cash generation relative to equity value.',
+      score: fcfYield !== null ? scorePositive(fcfYield, -0.02, 0.12) : null,
+    },
+    {
+      id: 'leverage',
+      label: 'Balance sheet strength',
+      valueText: [
+        debtToEquity !== null ? `D/E ${fmtRatio(debtToEquity, 2)}` : null,
+        netDebtToEBITDA !== null ? `Net Debt/EBITDA ${fmtRatio(netDebtToEBITDA, 2)}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+        || '—',
+      detail: 'Lower leverage supports durability.',
+      score: leverageScore !== null ? clamp(leverageScore) : null,
+    },
+    {
+      id: 'roe',
+      label: 'Return on equity',
+      valueText: roe !== null ? fmtPercent(roe * 100) : '—',
+      detail: 'Profitability of shareholder capital.',
+      score: roe !== null ? scorePositive(roe, 0.05, 0.3) : null,
+    },
+  ];
+
+  return metrics.map((metric) => {
+    const normalized = Number.isFinite(metric.score) ? clamp(metric.score) : null;
+    const percentScore = Number.isFinite(normalized) ? Math.round(normalized * 100) : null;
+    const { label, tone } = describeScore(percentScore);
+    return {
+      ...metric,
+      normalized,
+      score: percentScore,
+      band: label,
+      tone,
+    };
+  });
+}
+
+function metricScoreClass(tone) {
+  if (tone === 'positive') return 'positive';
+  if (tone === 'negative') return 'negative';
+  return 'caution';
+}
+
+function metricContainerClass(metric) {
+  const classes = ['radar-metric'];
+  if (!Number.isFinite(metric.score)) {
+    classes.push('is-missing');
+  } else if (metric.score >= 80) {
+    classes.push('is-strong');
+  } else if (metric.score <= 30) {
+    classes.push('is-weak');
+  }
+  return classes.join(' ');
+}
+
+function renderValuationRadarLegend(metrics = []) {
+  const legend = $('#valuationRadarLegend');
+  if (!legend) return;
+  if (!metrics.length) {
+    legend.innerHTML = '';
+    return;
+  }
+  const markup = metrics
+    .map((metric) => {
+      const scoreText = Number.isFinite(metric.score)
+        ? `${metric.score} · ${metric.band}`
+        : 'Pending data';
+      const scoreClass = `radar-metric-score ${metricScoreClass(metric.tone)}`;
+      const barWidth = Number.isFinite(metric.score) ? metric.score : 0;
+      const detailText = metric.detail ? `<div class="radar-metric-meta secondary">${metric.detail}</div>` : '';
+      return `
+        <li class="${metricContainerClass(metric)}">
+          <div class="radar-metric-header">
+            <span class="radar-metric-label">${metric.label}</span>
+            <span class="${scoreClass}">${scoreText}</span>
+          </div>
+          <div class="radar-metric-meta">${metric.valueText}</div>
+          ${detailText}
+          <div class="radar-metric-bar"><span style="width:${barWidth}%"></span></div>
+        </li>
+      `;
+    })
+    .join('');
+  legend.innerHTML = markup;
+}
+
+function renderValuationRadar(analysis = {}) {
+  const canvas = $('#valuationRadarChart');
+  const placeholder = $('#valuationRadarEmpty');
+  if (!canvas || !placeholder) return;
+
+  const metrics = computeValuationRadarMetrics(analysis);
+  renderValuationRadarLegend(metrics);
+
+  const availableMetrics = metrics.filter((metric) => Number.isFinite(metric.score));
+
+  if (valuationRadarChart) {
+    valuationRadarChart.destroy();
+    valuationRadarChart = null;
+  }
+
+  if (availableMetrics.length < 3) {
+    canvas.style.display = 'none';
+    placeholder.textContent = 'Valuation radar requires at least three quantitative signals.';
+    placeholder.classList.remove('hidden');
+    return;
+  }
+
+  placeholder.classList.add('hidden');
+  canvas.style.display = 'block';
+
+  valuationRadarChart = new Chart(canvas, {
+    type: 'radar',
+    data: {
+      labels: availableMetrics.map((metric) => metric.label),
+      datasets: [
+        {
+          label: 'Valuation posture',
+          data: availableMetrics.map((metric) => metric.score),
+          borderColor: '#4ad7a8',
+          backgroundColor: 'rgba(74, 215, 168, 0.24)',
+          pointBackgroundColor: '#5cf0bd',
+          pointHoverBackgroundColor: '#0b1725',
+          pointBorderColor: '#0b1725',
+          borderWidth: 2,
+          pointRadius: 4,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        r: {
+          beginAtZero: true,
+          suggestedMax: 100,
+          angleLines: { color: 'rgba(255,255,255,0.08)' },
+          grid: { color: 'rgba(255,255,255,0.08)' },
+          pointLabels: {
+            color: '#a7b3c5',
+            font: { size: 11 },
+          },
+          ticks: {
+            display: false,
+          },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const metric = availableMetrics[context.dataIndex];
+              return metric ? `${metric.label}: ${context.formattedValue} (${metric.band})` : context.formattedValue;
+            },
+          },
         },
       },
     },
@@ -449,7 +758,7 @@ async function runAnalysis() {
   setLoadingState(true);
   setStatus('Running ChatGPT‑5 analysis…', 'info');
   renderNarrative('', 'Processing latest Tiingo data…');
-  resetValuationCard('Crunching valuation components…');
+  resetValuationCard('Crunching valuation components…', 'Scoring valuation pillars…');
   showPlaceholderList('#timeline', 'Assembling event timeline…');
   showPlaceholderList('#documents', 'Retrieving regulatory documents…');
   showPlaceholderList('#newsList', 'Streaming latest news and sentiment…');
@@ -461,6 +770,7 @@ async function runAnalysis() {
     if (!data) throw new Error('No intelligence returned');
 
     updateValuationCard(data.valuation);
+    renderValuationRadar(data);
     renderTimeline(data.timeline);
     renderDocuments(data.documents);
     renderNews(data.news);

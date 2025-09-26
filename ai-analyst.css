@@ -273,6 +273,134 @@ body {
   color: var(--muted);
 }
 
+.valuation-radar {
+  margin-top: 1.4rem;
+  display: grid;
+  gap: 1.2rem;
+}
+
+.valuation-radar-chart {
+  position: relative;
+  min-height: 240px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.75rem;
+}
+
+.valuation-radar-chart canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.valuation-radar-empty {
+  position: absolute;
+  inset: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.5rem;
+  border-radius: 12px;
+  background: rgba(10, 20, 34, 0.65);
+  color: var(--muted);
+  font-size: 0.85rem;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.valuation-radar-empty.hidden {
+  display: none;
+}
+
+.valuation-radar-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.radar-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.radar-metric.is-strong {
+  border-color: rgba(74, 215, 168, 0.4);
+  box-shadow: 0 0 0 1px rgba(74, 215, 168, 0.12);
+}
+
+.radar-metric.is-weak {
+  border-color: rgba(255, 107, 107, 0.28);
+}
+
+.radar-metric.is-missing {
+  opacity: 0.65;
+  border-style: dashed;
+}
+
+.radar-metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.radar-metric-label {
+  font-weight: 600;
+}
+
+.radar-metric-score {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.radar-metric-score.positive {
+  color: var(--primary);
+}
+
+.radar-metric-score.caution {
+  color: var(--neutral);
+}
+
+.radar-metric-score.negative {
+  color: var(--danger);
+}
+
+.radar-metric-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.radar-metric-meta.secondary {
+  color: rgba(167, 179, 197, 0.78);
+}
+
+.radar-metric-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.radar-metric-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(74, 215, 168, 0.3), rgba(74, 215, 168, 0.8));
+  transition: width 0.3s ease;
+}
+
 .ai-narrative-panel {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
@@ -550,6 +678,9 @@ body {
   }
   .card {
     padding: 1.2rem;
+  }
+  .valuation-radar-chart {
+    min-height: 200px;
   }
   .timeline-item {
     grid-template-columns: 1fr;
