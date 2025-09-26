@@ -1,34 +1,35 @@
-const SECRET_KEY_HINTS = [
-  'KEY',
-  'TOKEN',
-  'SECRET',
-  'PASSWORD',
-  'API',
-  'ACCESS',
-  'PRIVATE',
-  'CLIENT',
-  'AUTH',
-];
+import {
+  getRegisteredRedactionPatterns,
+  getRegisteredSecretKeyHints,
+} from './security-registry.js';
 
 const DEFAULT_REPLACEMENT = '[redacted]';
 const MIN_ENV_SECRET_LENGTH = 16;
 const ENV_CACHE_TTL_MS = 60_000;
-
-const DEFAULT_PATTERNS = [
-  /\b(?:sk|rk|pk)_[A-Za-z0-9]{16,}\b/gi,
-  /\b[A-Za-z0-9]{40,}\b/g,
-  /\b[0-9a-f]{32,}\b/gi,
-  /bearer\s+[A-Za-z0-9\-._~+/=]{16,}/gi,
-];
+const SECRET_HINT_CACHE_TTL_MS = 60_000;
 
 let cachedEnvSecrets = null;
 let cachedEnvFetchedAt = 0;
+let cachedSecretKeyHints = null;
+let cachedSecretKeyHintsFetchedAt = 0;
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const getCachedSecretKeyHints = () => {
+  if (cachedSecretKeyHints && Date.now() - cachedSecretKeyHintsFetchedAt < SECRET_HINT_CACHE_TTL_MS) {
+    return cachedSecretKeyHints;
+  }
+  cachedSecretKeyHints = getRegisteredSecretKeyHints()
+    .map((hint) => String(hint || '').trim().toUpperCase())
+    .filter(Boolean);
+  cachedSecretKeyHintsFetchedAt = Date.now();
+  return cachedSecretKeyHints;
+};
+
 const looksLikeSecretKeyName = (key) => {
   const upperKey = key.toUpperCase();
-  return SECRET_KEY_HINTS.some((hint) => upperKey.includes(hint));
+  const hints = getCachedSecretKeyHints();
+  return hints.some((hint) => upperKey.includes(hint));
 };
 
 const looksLikeSecretValue = (value) => {
@@ -43,13 +44,14 @@ const looksLikeSecretValue = (value) => {
 const collectLikelyEnvSecrets = () => {
   const env = process.env || {};
   const secrets = new Set();
+  const defaultPatterns = getRegisteredRedactionPatterns();
   for (const [key, value] of Object.entries(env)) {
     if (typeof value !== 'string') continue;
     const trimmed = value.trim();
     if (!looksLikeSecretValue(trimmed)) continue;
     if (!looksLikeSecretKeyName(key)) {
       // Only keep non-hinted keys if they look like cryptographic material.
-      if (!DEFAULT_PATTERNS.some((pattern) => {
+      if (!defaultPatterns.some((pattern) => {
         pattern.lastIndex = 0;
         return pattern.test(trimmed);
       })) {
@@ -83,7 +85,7 @@ export const redactSecrets = (input, options = {}) => {
 
   let result = value;
 
-  const patterns = [...DEFAULT_PATTERNS.map((pattern) => new RegExp(pattern.source, pattern.flags)), ...additionalPatterns];
+  const patterns = [...getRegisteredRedactionPatterns(), ...additionalPatterns];
   for (const pattern of patterns) {
     result = result.replace(pattern, replaceValue);
   }
@@ -150,6 +152,8 @@ export const logError = (labelOrError, maybeError, options = {}) => {
 export const resetEnvSecretCache = () => {
   cachedEnvSecrets = null;
   cachedEnvFetchedAt = 0;
+  cachedSecretKeyHints = null;
+  cachedSecretKeyHintsFetchedAt = 0;
 };
 
 export default {
