@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Professional Desk</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./professional/pro-shared.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" defer></script>
+    <script type="module" src="./professional/professional-desk.js" defer></script>
+  </head>
+  <body>
+    <div class="pro-app-shell">
+      <aside class="pro-sidebar">
+        <section class="pro-card pro-brand fade-in">
+          <h1>Professional Desk</h1>
+          <p>High-performance workspace for live market intelligence and execution planning.</p>
+        </section>
+        <section class="pro-card pro-watchlist fade-in" style="animation-delay: 0.05s">
+          <div class="watchlist-title">Pinned Symbols</div>
+          <ul id="watchlist-items">
+            <li data-symbol="AAPL" class="active">
+              <div class="symbol">AAPL</div>
+              <div class="price muted" id="quote-price">—</div>
+            </li>
+            <li data-symbol="MSFT">
+              <div class="symbol">MSFT</div>
+              <div class="price muted">—</div>
+            </li>
+            <li data-symbol="NVDA">
+              <div class="symbol">NVDA</div>
+              <div class="price muted">—</div>
+            </li>
+            <li data-symbol="GOOGL">
+              <div class="symbol">GOOGL</div>
+              <div class="price muted">—</div>
+            </li>
+          </ul>
+        </section>
+        <section class="pro-card pro-mini-card fade-in" style="animation-delay: 0.12s">
+          <h3>Execution Notes</h3>
+          <p>
+            Track catalysts, liquidity windows, and risk parameters for <span data-active-symbol>AAPL</span>.
+            Sync with OMS once ready for live routing.
+          </p>
+        </section>
+        <section class="pro-card pro-mini-card fade-in" style="animation-delay: 0.16s">
+          <h3>Market Pulse</h3>
+          <p>Overlay macro signals and cross-asset flows to contextualize price action.</p>
+        </section>
+      </aside>
+      <main class="pro-main">
+        <header class="pro-card pro-toolbar fade-in" id="top-toolbar">
+          <div class="pro-symbol-controls" id="symbol-controls"></div>
+          <div class="pro-chart-meta">
+            <div class="symbol" data-active-symbol>AAPL</div>
+            <div id="status-host" class="pro-status-region"></div>
+          </div>
+        </header>
+        <section class="pro-card pro-chart-card fade-in" style="animation-delay: 0.08s">
+          <div class="pro-chart-meta">
+            <div>
+              <div class="symbol" data-active-symbol>AAPL</div>
+              <div id="quote-change" class="muted" data-direction="">—</div>
+            </div>
+          </div>
+          <div class="pro-chart-wrapper">
+            <canvas id="price-history" aria-label="Price history chart" role="img"></canvas>
+          </div>
+          <footer class="pro-footer-note muted">Data via Tiingo · Zoom with scroll or pinch · Reset via range toggle</footer>
+        </section>
+        <section class="pro-grid fade-in" style="animation-delay: 0.12s">
+          <article class="pro-mini-card">
+            <h3>Order Staging</h3>
+            <p>Configure entry slices, urgency, and ATS routing rules in alignment with <span data-active-symbol>AAPL</span> strategy.</p>
+          </article>
+          <article class="pro-mini-card">
+            <h3>Scenario Planning</h3>
+            <p>Run rapid sensitivity analyses across vol regimes and liquidity tiers before committing capital.</p>
+          </article>
+          <article class="pro-mini-card">
+            <h3>Research Feed</h3>
+            <p>Stream proprietary desk notes, sell-side models, and machine summaries alongside price structure.</p>
+          </article>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
