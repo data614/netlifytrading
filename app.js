@@ -1,3 +1,5 @@
+import { enrichError, getFriendlyErrorMessage } from './utils/frontend-errors.js';
+
 // Minimal frontend logic to fetch from Netlify functions and render the UI
 // Uses the existing _redirects mapping: `/api/* -> /.netlify/functions/:splat`
 // So all requests go to `/api/tiingo` locally (netlify dev) and when deployed.
@@ -40,29 +42,54 @@ async function callTiingo(params, options = {}) {
   try {
     const resp = await fetch(url, { headers: { accept: 'application/json' } });
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data?.warning || data?.error || resp.statusText);
+    if (!resp.ok) {
+      const error = new Error(data?.warning || data?.error || resp.statusText || 'Tiingo request failed.');
+      error.status = resp.status;
+      error.response = data;
+      throw error;
+    }
     if (data?.warning) console.warn('tiingo warning:', data.warning);
+    const responseMeta = data?.meta && typeof data.meta === 'object' ? { ...data.meta } : {};
     const meta = {
-      source: resp.headers.get('x-tiingo-source') || data?.meta?.source || '',
-      fallback: resp.headers.get('x-tiingo-fallback') || data?.meta?.fallback || '',
+      ...responseMeta,
+      source: resp.headers.get('x-tiingo-source') || responseMeta.source || '',
+      fallback: resp.headers.get('x-tiingo-fallback') || responseMeta.fallback || '',
       tokenPreview: resp.headers.get('x-tiingo-token-preview') || '',
       chosenKey: resp.headers.get('x-tiingo-chosen-key') || '',
-      kind: data?.meta?.kind || params?.kind || '',
+      kind: params?.kind || responseMeta.kind || '',
     };
-    return {
+    const payload = {
       body: data,
       data: data?.data,
       symbol: data?.symbol || params?.symbol || '',
       warning: data?.warning || '',
       meta,
     };
-  } catch (err) {
     if (!silent) {
-      showError(`Request failed: ${String(err.message || err)}`);
-    } else {
-      console.warn('Tiingo request failed', err);
+      if (meta?.reason === 'exception') {
+        const friendlyWarning = getFriendlyErrorMessage({
+          context: 'tiingo',
+          message: data?.warning || meta?.message || '',
+          detail: meta?.message || '',
+          fallback: 'Live market data is temporarily unavailable. Displaying sample data.',
+        });
+        showError(friendlyWarning);
+      } else {
+        showError('');
+      }
     }
-    throw err;
+    return payload;
+  } catch (err) {
+    const enhanced = enrichError(err, {
+      context: 'tiingo',
+      fallback: 'Unable to load market data. Please try again shortly.',
+    });
+    if (!silent) {
+      showError(enhanced.userMessage || enhanced.message);
+    } else {
+      console.warn('Tiingo request failed', enhanced);
+    }
+    throw enhanced;
   } finally {
     if (!silent) showLoading(false);
   }
