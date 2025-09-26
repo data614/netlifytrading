@@ -1,4 +1,5 @@
 import handleTiingoRequest from './tiingo.js';
+import { createCache } from './lib/cache.js';
 import { summarizeValuationNarrative } from './lib/valuation.js';
 import { getGeminiKeyDetail, getGeminiModel, generateGeminiContent } from './lib/gemini.js';
 import { getCodexKeyDetail, getCodexModel, generateCodexContent } from './lib/codex.js';
@@ -25,6 +26,9 @@ const corsHeaders = {
 const DEFAULT_NEWS_LIMIT = 6;
 const DEFAULT_DOCUMENT_LIMIT = 4;
 const DEFAULT_PRICE_POINTS = 120;
+const INTEL_CACHE_TTL = 2 * 60 * 1000;
+
+const intelCache = createCache({ ttl: INTEL_CACHE_TTL, maxEntries: 36 });
 
 const toNumber = (value) => {
   const num = Number(value);
@@ -42,6 +46,20 @@ const fmtPercent = (value, fraction = false) => {
   if (num === null) return 'n/a';
   const pct = fraction ? num * 100 : num;
   return `${pct.toFixed(1)}%`;
+};
+
+const cloneForCache = (value) => {
+  if (value === undefined || value === null || typeof value !== 'object') {
+    return value;
+  }
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch (error) {
+      // Fall back to JSON cloning if structuredClone fails (e.g., unsupported types).
+    }
+  }
+  return JSON.parse(JSON.stringify(value));
 };
 
 const buildTiingoRequest = (symbol, { kind = 'eod', limit, interval } = {}) => {
@@ -264,7 +282,27 @@ const buildUserPrompt = (symbol, datasets) => {
 
 const mergeWarnings = (...messages) => messages.filter((msg) => typeof msg === 'string' && msg.trim()).map((msg) => msg.trim());
 
-const gatherTiingoIntel = async (symbol, { newsLimit = DEFAULT_NEWS_LIMIT, documentLimit = DEFAULT_DOCUMENT_LIMIT, priceLimit = DEFAULT_PRICE_POINTS } = {}) => {
+const gatherTiingoIntel = async (
+  symbol,
+  { newsLimit = DEFAULT_NEWS_LIMIT, documentLimit = DEFAULT_DOCUMENT_LIMIT, priceLimit = DEFAULT_PRICE_POINTS } = {},
+) => {
+  const cacheKey = JSON.stringify({
+    symbol: symbol.toUpperCase(),
+    newsLimit,
+    documentLimit,
+    priceLimit,
+  });
+
+  const cached = intelCache.get(cacheKey);
+  if (cached) {
+    return {
+      datasets: cloneForCache(cached.datasets),
+      warnings: Array.isArray(cached.warnings) ? [...cached.warnings] : [],
+      responses: cloneForCache(cached.responses),
+      cache: { hit: true, fetchedAt: cached.fetchedAt || null, ttlMs: INTEL_CACHE_TTL, key: cacheKey },
+    };
+  }
+
   const [valuationRes, newsRes, documentsRes, actionsRes, priceRes] = await Promise.all([
     callTiingo(symbol, { kind: 'valuation' }),
     callTiingo(symbol, { kind: 'news', limit: newsLimit }),
@@ -301,11 +339,38 @@ const gatherTiingoIntel = async (symbol, { newsLimit = DEFAULT_NEWS_LIMIT, docum
     priceHistory: priceRes,
   };
 
-  return { datasets, warnings, responses };
+  const fetchedAt = new Date().toISOString();
+  intelCache.set(
+    cacheKey,
+    {
+      datasets: cloneForCache(datasets),
+      warnings: [...warnings],
+      responses: cloneForCache(responses),
+      fetchedAt,
+    },
+    INTEL_CACHE_TTL,
+  );
+
+  return {
+    datasets,
+    warnings,
+    responses,
+    cache: { hit: false, fetchedAt, ttlMs: INTEL_CACHE_TTL, key: cacheKey },
+  };
 };
 
-const ok = (body, warning) => {
-  const headers = { ...corsHeaders };
+const ok = (body, warning, extraHeaders = {}) => {
+  const extra = {};
+  Object.entries(extraHeaders || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    extra[key] = value;
+  });
+  const hasCacheControl = Object.keys(extra).some((key) => key.toLowerCase() === 'cache-control');
+  const headers = {
+    ...corsHeaders,
+    ...(hasCacheControl ? {} : { 'cache-control': 'public, max-age=60, s-maxage=300' }),
+    ...extra,
+  };
   if (warning) {
     headers['x-ai-analyst-warning'] = warning;
   }
@@ -341,11 +406,18 @@ export async function handleRequest(request) {
   }
 
   try {
-    const { datasets, warnings: tiingoWarnings, responses } = await gatherTiingoIntel(symbol, {
+    const { datasets, warnings: tiingoWarnings, responses, cache: gatherCache = {} } = await gatherTiingoIntel(symbol, {
       newsLimit,
       documentLimit,
       priceLimit,
     });
+
+    const cacheMeta = {
+      hit: Boolean(gatherCache?.hit),
+      fetchedAt: gatherCache?.fetchedAt || null,
+      ttlMs: gatherCache?.ttlMs ?? INTEL_CACHE_TTL,
+      key: gatherCache?.key || undefined,
+    };
 
     const userPrompt = buildUserPrompt(symbol, { ...datasets, warnings: tiingoWarnings });
 
@@ -467,6 +539,7 @@ export async function handleRequest(request) {
             source: value?.headers?.['x-tiingo-source'] || value?.headers?.['x-intel-source'] || '',
           }]),
         ),
+        cache: cacheMeta,
       },
       quant: datasets.quantMetrics,
       prompt: {
@@ -500,7 +573,19 @@ export async function handleRequest(request) {
       },
     };
 
-    return ok(responseBody, combinedWarnings.join(' | '));
+    const warningHeader = combinedWarnings.join(' | ');
+    const cacheHeaders = {
+      'x-ai-analyst-cache': cacheMeta.hit ? 'hit' : 'miss',
+      'x-ai-analyst-cache-ttl': String(cacheMeta.ttlMs ?? INTEL_CACHE_TTL),
+    };
+    if (cacheMeta.fetchedAt) {
+      cacheHeaders['x-ai-analyst-cached-at'] = cacheMeta.fetchedAt;
+    }
+    if (cacheMeta.key) {
+      cacheHeaders['x-ai-analyst-cache-key'] = cacheMeta.key;
+    }
+
+    return ok(responseBody, warningHeader, cacheHeaders);
   } catch (error) {
     console.error('AI analyst orchestrator failed:', error);
     return Response.json({ error: 'AI analyst orchestrator failed.' }, { status: 500, headers: corsHeaders });
