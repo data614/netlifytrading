@@ -1,7 +1,20 @@
 // utils/secret-redactor.js
+// Merged: registry-driven hints/patterns + builder fallback + resilient defaults.
+
+import {
+  getRegisteredRedactionPatterns,
+  getRegisteredSecretKeyHints,
+} from './security-registry.js';
+
 import { buildDefaultSecretPatterns } from './security-patterns.js';
 
-const SECRET_KEY_HINTS = [
+const DEFAULT_REPLACEMENT = '[redacted]';
+const MIN_ENV_SECRET_LENGTH = 16;
+const ENV_CACHE_TTL_MS = 60_000;
+const SECRET_HINT_CACHE_TTL_MS = 60_000;
+
+// Fallback key-name hints if registry provides none
+const FALLBACK_SECRET_KEY_HINTS = [
   'KEY',
   'TOKEN',
   'SECRET',
@@ -13,38 +26,100 @@ const SECRET_KEY_HINTS = [
   'AUTH',
 ];
 
-const DEFAULT_REPLACEMENT = '[redacted]';
-const MIN_ENV_SECRET_LENGTH = 16;
-const ENV_CACHE_TTL_MS = 60_000;
-
-// Unified patterns:
-// - sk|rk|pk prefixes with optional middle segment (covers both conflict variants)
-// - long opaque base62-ish blobs
-// - long hex strings
-// - bearer tokens
+// Strong base regexes (cover common API key/token shapes)
 const BASE_DEFAULT_PATTERNS = [
-  /\b(?:sk|rk|pk)_(?:[a-z]+_)?[A-Za-z0-9]{16,}\b/gi,
-  /\b[A-Za-z0-9]{40,}\b/g,
-  /\b[0-9a-f]{32,}\b/gi,
-  /bearer\s+[A-Za-z0-9\-._~+/=]{16,}/gi,
+  /\b(?:sk|rk|pk)_(?:[a-z]+_)?[A-Za-z0-9]{16,}\b/gi, // e.g., sk_live_xxx / pk_test_xxx
+  /\b[A-Za-z0-9]{40,}\b/g,                           // long base62-ish blobs
+  /\b[0-9a-f]{32,}\b/gi,                             // long hex tokens
+  /bearer\s+[A-Za-z0-9\-._~+/=]{16,}/gi,             // bearer <jwt-ish>
 ];
 
-// Prefer patterns from security-patterns.js when available,
-// but only keep valid RegExp objects. Fall back to the base set.
-const fromBuilder = (() => {
+// --- Utilities ---------------------------------------------------------------
+
+const asRegExpArray = (arr) =>
+  Array.isArray(arr) ? arr.filter((p) => p instanceof RegExp) : [];
+
+const cloneRegex = (rx) => new RegExp(rx.source, rx.flags || '');
+const uniqRegexes = (list) => {
+  const seen = new Set();
+  const out = [];
+  for (const rx of list) {
+    const key = `${rx.source}::${rx.flags || ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(cloneRegex(rx));
+    }
+  }
+  return out;
+};
+
+// Build-time / static fallback patterns: prefer builder, else base.
+const BUILDER_PATTERNS = (() => {
   try {
     const maybe = typeof buildDefaultSecretPatterns === 'function'
       ? buildDefaultSecretPatterns()
       : null;
-    return Array.isArray(maybe) ? maybe.filter((p) => p instanceof RegExp) : [];
+    return asRegExpArray(maybe);
   } catch {
     return [];
   }
 })();
 
-const DEFAULT_PATTERNS = (fromBuilder.length ? fromBuilder : BASE_DEFAULT_PATTERNS).map(
-  (pattern) => new RegExp(pattern.source, pattern.flags),
-);
+const STATIC_FALLBACK_PATTERNS = BUILDER_PATTERNS.length
+  ? BUILDER_PATTERNS
+  : BASE_DEFAULT_PATTERNS;
+
+// Cached hints from registry (with fallback and TTL)
+let cachedSecretKeyHints = null;
+let cachedSecretKeyHintsFetchedAt = 0;
+
+const getCachedSecretKeyHints = () => {
+  const now = Date.now();
+  if (
+    cachedSecretKeyHints &&
+    now - cachedSecretKeyHintsFetchedAt < SECRET_HINT_CACHE_TTL_MS
+  ) {
+    return cachedSecretKeyHints;
+  }
+
+  let hints = [];
+  try {
+    if (typeof getRegisteredSecretKeyHints === 'function') {
+      hints = (getRegisteredSecretKeyHints() || [])
+        .map((h) => String(h || '').trim())
+        .filter(Boolean);
+    }
+  } catch {
+    // ignore
+  }
+
+  if (!hints.length) hints = FALLBACK_SECRET_KEY_HINTS;
+
+  cachedSecretKeyHints = hints.map((h) => h.toUpperCase());
+  cachedSecretKeyHintsFetchedAt = now;
+  return cachedSecretKeyHints;
+};
+
+// Effective pattern set = union(registry, static fallback) [+ additional]
+const getEffectiveRedactionPatterns = (additional = []) => {
+  let registry = [];
+  try {
+    if (typeof getRegisteredRedactionPatterns === 'function') {
+      registry = asRegExpArray(getRegisteredRedactionPatterns());
+    }
+  } catch {
+    // ignore registry errors
+  }
+
+  const add = asRegExpArray(additional);
+  return uniqRegexes([
+    ...registry,
+    ...STATIC_FALLBACK_PATTERNS,
+    ...add,
+  ]).map(cloneRegex); // ensure clean lastIndex/flags
+};
+
+// --- Env scanning + redaction ----------------------------------------------
 
 let cachedEnvSecrets = null;
 let cachedEnvFetchedAt = 0;
@@ -52,15 +127,15 @@ let cachedEnvFetchedAt = 0;
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const looksLikeSecretKeyName = (key) => {
-  const upperKey = key.toUpperCase();
-  return SECRET_KEY_HINTS.some((hint) => upperKey.includes(hint));
+  const upperKey = String(key || '').toUpperCase();
+  return getCachedSecretKeyHints().some((hint) => upperKey.includes(hint));
 };
 
 const looksLikeSecretValue = (value) => {
   if (!value || typeof value !== 'string') return false;
   const trimmed = value.trim();
   if (trimmed.length < MIN_ENV_SECRET_LENGTH) return false;
-  if (/^[0-9]+$/.test(trimmed)) return false; // pure digits are unlikely secrets
+  if (/^[0-9]+$/.test(trimmed)) return false; // pure digits unlikely secrets
   if (/^[A-Za-z]+$/.test(trimmed) && trimmed.length < 24) return false; // short alpha-only
   return /[A-Za-z]/.test(trimmed) && /[0-9]/.test(trimmed);
 };
@@ -68,6 +143,7 @@ const looksLikeSecretValue = (value) => {
 const collectLikelyEnvSecrets = () => {
   const env = process.env || {};
   const secrets = new Set();
+  const cryptoLike = getEffectiveRedactionPatterns(); // use union for scanning
 
   for (const [key, value] of Object.entries(env)) {
     if (typeof value !== 'string') continue;
@@ -75,11 +151,14 @@ const collectLikelyEnvSecrets = () => {
     if (!looksLikeSecretValue(trimmed)) continue;
 
     if (!looksLikeSecretKeyName(key)) {
-      // Keep non-hinted keys only if they match crypto-like patterns.
-      const looksCrypto = DEFAULT_PATTERNS.some((pattern) => {
+      let looksCrypto = false;
+      for (const pattern of cryptoLike) {
         pattern.lastIndex = 0;
-        return pattern.test(trimmed);
-      });
+        if (pattern.test(trimmed)) {
+          looksCrypto = true;
+          break;
+        }
+      }
       if (!looksCrypto) continue;
     }
 
@@ -91,13 +170,16 @@ const collectLikelyEnvSecrets = () => {
 };
 
 const getCachedEnvSecrets = () => {
-  if (cachedEnvSecrets && Date.now() - cachedEnvFetchedAt < ENV_CACHE_TTL_MS) {
+  const now = Date.now();
+  if (cachedEnvSecrets && now - cachedEnvFetchedAt < ENV_CACHE_TTL_MS) {
     return cachedEnvSecrets;
   }
   cachedEnvSecrets = collectLikelyEnvSecrets();
-  cachedEnvFetchedAt = Date.now();
+  cachedEnvFetchedAt = now;
   return cachedEnvSecrets;
 };
+
+// Public API -----------------------------------------------------------------
 
 export const redactSecrets = (input, options = {}) => {
   if (input === null || input === undefined) return '';
@@ -108,18 +190,11 @@ export const redactSecrets = (input, options = {}) => {
 
   const additionalPatterns = Array.isArray(options.additionalPatterns)
     ? options.additionalPatterns
-        .filter((pattern) => pattern instanceof RegExp)
-        .map((pattern) => new RegExp(pattern.source, pattern.flags))
     : [];
 
   let result = value;
 
-  // Clone patterns to ensure clean lastIndex and flags.
-  const patterns = [
-    ...DEFAULT_PATTERNS.map((p) => new RegExp(p.source, p.flags)),
-    ...additionalPatterns.map((p) => new RegExp(p.source, p.flags)),
-  ];
-
+  const patterns = getEffectiveRedactionPatterns(additionalPatterns);
   for (const pattern of patterns) {
     result = result.replace(pattern, replaceValue);
   }
@@ -128,9 +203,7 @@ export const redactSecrets = (input, options = {}) => {
     const envSecrets = getCachedEnvSecrets();
     for (const secret of envSecrets) {
       if (!secret) continue;
-      const escaped = escapeRegExp(secret);
-      if (!escaped) continue;
-      const envPattern = new RegExp(escaped, 'g');
+      const envPattern = new RegExp(escapeRegExp(secret), 'g');
       result = result.replace(envPattern, replaceValue);
     }
   }
@@ -156,7 +229,11 @@ const coerceErrorMessage = (error) => {
 
 export const sanitizeErrorDetail = (error, options = {}) => {
   const fallback = options.fallback || 'Unexpected error.';
-  const maxLength = Number.isFinite(options.maxLength) && options.maxLength > 0 ? options.maxLength : null;
+  const maxLength =
+    Number.isFinite(options.maxLength) && options.maxLength > 0
+      ? options.maxLength
+      : null;
+
   const raw = coerceErrorMessage(error);
   if (!raw) return fallback;
 
@@ -186,6 +263,8 @@ export const logError = (labelOrError, maybeError, options = {}) => {
 export const resetEnvSecretCache = () => {
   cachedEnvSecrets = null;
   cachedEnvFetchedAt = 0;
+  cachedSecretKeyHints = null;
+  cachedSecretKeyHintsFetchedAt = 0;
 };
 
 export default {
