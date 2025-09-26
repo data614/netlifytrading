@@ -1,6 +1,50 @@
 import { createRenderQueue, createRequestCache } from './utils/browser-cache.js';
 import { enrichError, getFriendlyErrorMessage } from './utils/frontend-errors.js';
 
+const createMemoryStorage = () => {
+  const store = new Map();
+  return {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => { store.set(key, String(value)); },
+    removeItem: (key) => { store.delete(key); },
+    clear: () => { store.clear(); },
+  };
+};
+
+if (typeof window === 'undefined') {
+  globalThis.window = {
+    location: { origin: 'http://localhost' },
+    localStorage: createMemoryStorage(),
+  };
+}
+
+if (!window.localStorage) {
+  window.localStorage = createMemoryStorage();
+}
+
+if (typeof localStorage === 'undefined') {
+  globalThis.localStorage = window.localStorage;
+}
+
+if (typeof document === 'undefined') {
+  const createStubElement = () => ({
+    style: {},
+    classList: { add() {}, remove() {}, toggle() {} },
+    dataset: {},
+    appendChild() {},
+    setAttribute() {},
+    remove() {},
+    replaceChildren() {},
+  });
+  globalThis.document = {
+    getElementById: () => null,
+    querySelector: () => null,
+    createElement: () => createStubElement(),
+    createDocumentFragment: () => ({ appendChild() {}, firstChild: null }),
+    addEventListener: () => {},
+  };
+}
+
 // Minimal frontend logic to fetch from Netlify functions and render the UI
 // Uses the existing _redirects mapping: `/api/* -> /.netlify/functions/:splat`
 // So all requests go to `/api/tiingo` locally (netlify dev) and when deployed.
@@ -165,6 +209,7 @@ let exchangeFilterEl = null;
 let newsAbortController = null;
 const watchlistQuotes = new Map();
 let watchlistRefreshTimer = null;
+const chartEventCache = new Map();
 
 const WATCHLIST_REFRESH_INTERVAL = 60 * 1000;
 const WATCHLIST_FETCH_LIMIT = 12;
@@ -192,6 +237,41 @@ function sma(values, windowSize) {
     if (Number.isFinite(v)) sum += v; else return out;
     if (i >= w) sum -= Number(values[i - w]);
     if (i >= w - 1) out[i] = +(sum / w).toFixed(2);
+  }
+  return out;
+}
+
+function ema(values, windowSize) {
+  const w = Math.max(1, Math.min(windowSize || 1, values.length));
+  const out = new Array(values.length).fill(null);
+  const multiplier = 2 / (w + 1);
+  const window = [];
+  let emaPrev = null;
+  let sum = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const value = Number(values[i]);
+    if (!Number.isFinite(value)) {
+      window.length = 0;
+      sum = 0;
+      emaPrev = null;
+      out[i] = null;
+      continue;
+    }
+    window.push(value);
+    sum += value;
+    if (window.length < w) {
+      out[i] = null;
+      continue;
+    }
+    if (window.length > w) {
+      sum -= window.shift();
+    }
+    if (emaPrev === null) {
+      emaPrev = sum / w;
+    } else {
+      emaPrev = (value - emaPrev) * multiplier + emaPrev;
+    }
+    out[i] = +emaPrev.toFixed(2);
   }
   return out;
 }
@@ -957,6 +1037,134 @@ function formatChartLabel(value, intraday) {
   return intraday ? timeLabelFormatter.format(date) : dateLabelFormatter.format(date);
 }
 
+const EVENT_TYPE_META = {
+  earnings: { color: '#f39c12', shape: 'triangle', label: 'Earnings' },
+  filing: { color: '#2980b9', shape: 'rectRot', label: 'Filing' },
+  dividend: { color: '#9b59b6', shape: 'circle', label: 'Dividend' },
+  split: { color: '#1abc9c', shape: 'rect', label: 'Split' },
+  default: { color: '#95a5a6', shape: 'circle', label: 'Event' },
+};
+
+const getEventMeta = (type) => EVENT_TYPE_META[type] || EVENT_TYPE_META.default;
+
+const normaliseDateKey = (value) => {
+  const date = parseDate(value);
+  if (!date) return '';
+  return date.toISOString().slice(0, 10);
+};
+
+async function loadChartEventsForSymbol(symbol) {
+  const key = String(symbol || '').toUpperCase();
+  if (!key) return [];
+  if (chartEventCache.has(key)) {
+    return chartEventCache.get(key);
+  }
+
+  const loader = (async () => {
+    const [statementsRes, filingsRes, actionsRes] = await Promise.allSettled([
+      callTiingo({ symbol: key, kind: 'statements', limit: 8 }, { silent: true }).catch(() => null),
+      callTiingo({ symbol: key, kind: 'filings', limit: 12 }, { silent: true }).catch(() => null),
+      callTiingo({ symbol: key, kind: 'actions' }, { silent: true }).catch(() => null),
+    ]);
+
+    const events = [];
+
+    if (statementsRes.status === 'fulfilled') {
+      const incomeRows = statementsRes.value?.data?.income || [];
+      incomeRows.forEach((row, index) => {
+        const dateKey = normaliseDateKey(row?.reportDate || row?.endDate || row?.date);
+        if (!dateKey) return;
+        const meta = getEventMeta('earnings');
+        const details = [];
+        if (Number.isFinite(Number(row?.earningsPerShare))) {
+          details.push(`EPS ${Number(row.earningsPerShare).toFixed(2)}`);
+        }
+        if (Number.isFinite(Number(row?.revenue))) {
+          details.push(`Revenue ${fmt(row.revenue)}`);
+        }
+        events.push({
+          id: `earnings-${dateKey}-${index}`,
+          type: 'earnings',
+          date: dateKey,
+          title: row?.period ? `${meta.label} ${row.period}` : meta.label,
+          description: details.join(' · '),
+          style: meta,
+        });
+      });
+    }
+
+    if (filingsRes.status === 'fulfilled') {
+      const filings = Array.isArray(filingsRes.value?.data) ? filingsRes.value.data : [];
+      filings.forEach((filing) => {
+        const dateKey = normaliseDateKey(filing?.publishedAt || filing?.date);
+        if (!dateKey) return;
+        const meta = getEventMeta('filing');
+        events.push({
+          id: `filing-${filing?.id || dateKey}`,
+          type: 'filing',
+          date: dateKey,
+          title: filing?.documentType ? `${meta.label} ${filing.documentType}` : meta.label,
+          description: filing?.headline || filing?.summary || '',
+          style: meta,
+        });
+      });
+    }
+
+    if (actionsRes.status === 'fulfilled') {
+      const dividends = Array.isArray(actionsRes.value?.data?.dividends)
+        ? actionsRes.value.data.dividends
+        : [];
+      dividends.forEach((dividend, index) => {
+        const dateKey = normaliseDateKey(dividend?.exDate || dividend?.payDate);
+        if (!dateKey) return;
+        const meta = getEventMeta('dividend');
+        const amount = Number(dividend?.amount);
+        events.push({
+          id: `dividend-${dateKey}-${index}`,
+          type: 'dividend',
+          date: dateKey,
+          title: meta.label,
+          description: Number.isFinite(amount) ? `Ex-Date • ${fmt(amount)}` : 'Ex-Date',
+          style: meta,
+        });
+      });
+
+      const splits = Array.isArray(actionsRes.value?.data?.splits) ? actionsRes.value.data.splits : [];
+      splits.forEach((split, index) => {
+        const dateKey = normaliseDateKey(split?.exDate || split?.payDate);
+        if (!dateKey) return;
+        const meta = getEventMeta('split');
+        const numerator = Number(split?.numerator);
+        const denominator = Number(split?.denominator);
+        const ratio = Number.isFinite(numerator) && Number.isFinite(denominator)
+          ? `${numerator}:${denominator}`
+          : '';
+        events.push({
+          id: `split-${dateKey}-${index}`,
+          type: 'split',
+          date: dateKey,
+          title: meta.label,
+          description: ratio ? `Ratio ${ratio}` : '',
+          style: meta,
+        });
+      });
+    }
+
+    events.sort((a, b) => new Date(a.date) - new Date(b.date));
+    return events;
+  })();
+
+  chartEventCache.set(key, loader);
+  try {
+    const events = await loader;
+    return events;
+  } catch (err) {
+    chartEventCache.delete(key);
+    console.warn('Failed to load chart events', err);
+    return [];
+  }
+}
+
 function updateTimeframeButtons(activeTf) {
   timeframeButtons.forEach((btn) => {
     const isActive = btn.dataset.tf === activeTf;
@@ -994,19 +1202,21 @@ function renderQuote(q) {
   $('exchangeAcronym').textContent = exchange ? ` ${exchange}` : '';
 }
 
-function renderChart(rows, intraday) {
+function renderChart(rows, intraday, events = []) {
   const canvas = $('stockChart');
   if (!canvas || !Array.isArray(rows)) return;
 
   const labels = [];
   const numericValues = [];
   const plottedValues = [];
+  const dateKeys = [];
   let validValueCount = 0;
 
   rows.forEach((row) => {
     labels.push(formatChartLabel(row?.date, intraday));
     const raw = Number(row?.close ?? row?.last ?? row?.price);
     numericValues.push(raw);
+    dateKeys.push(normaliseDateKey(row?.date));
     if (Number.isFinite(raw)) {
       const rounded = Number(raw.toFixed(2));
       plottedValues.push(rounded);
@@ -1016,10 +1226,172 @@ function renderChart(rows, intraday) {
     }
   });
 
-  const ma = sma(numericValues, Math.min(20, numericValues.length));
+  const sma20 = sma(numericValues, Math.min(20, numericValues.length));
+  const sma50 = sma(numericValues, Math.min(50, numericValues.length));
+  const ema12 = ema(numericValues, Math.min(12, numericValues.length));
+  const ema26 = ema(numericValues, Math.min(26, numericValues.length));
   const hasMultiplePoints = validValueCount > 1;
   const animation = { duration: intraday ? 280 : 400, easing: 'easeOutCubic' };
   const xTickLimit = intraday ? 8 : 10;
+
+  const eventsByDate = new Map();
+  events.forEach((event) => {
+    const key = event?.date ? normaliseDateKey(event.date) : '';
+    if (!key) return;
+    if (!eventsByDate.has(key)) {
+      eventsByDate.set(key, []);
+    }
+    eventsByDate.get(key).push(event);
+  });
+
+  const eventSeries = dateKeys.map((key, index) => {
+    const eventList = eventsByDate.get(key);
+    if (!eventList || !eventList.length) return null;
+    let value = plottedValues[index];
+    if (!Number.isFinite(value)) {
+      for (let back = index - 1; back >= 0; back -= 1) {
+        if (Number.isFinite(plottedValues[back])) {
+          value = plottedValues[back];
+          break;
+        }
+      }
+    }
+    if (!Number.isFinite(value)) {
+      for (let forward = index + 1; forward < plottedValues.length; forward += 1) {
+        if (Number.isFinite(plottedValues[forward])) {
+          value = plottedValues[forward];
+          break;
+        }
+      }
+    }
+    if (!Number.isFinite(value)) return null;
+    const style = eventList[eventList.length - 1]?.style || getEventMeta();
+    return {
+      y: value,
+      events: eventList,
+      style,
+      label: eventList.map((evt) => evt.title).join(' • '),
+    };
+  });
+
+  const tooltipCallbacks = {
+    label(context) {
+      if (context.dataset?.metaType === 'event') {
+        const raw = context.raw;
+        if (!raw || !raw.events || !raw.events.length) return null;
+        return raw.events.map((evt) => {
+          const base = evt?.title || context.dataset.label || 'Event';
+          return evt?.description ? `${base}: ${evt.description}` : base;
+        });
+      }
+      const datasetLabel = context.dataset?.label || '';
+      const value = Number.isFinite(context.parsed?.y)
+        ? context.parsed.y
+        : Number.isFinite(Number(context.parsed))
+          ? Number(context.parsed)
+          : null;
+      if (!Number.isFinite(value)) return null;
+      return `${datasetLabel}: ${fmt(value)}`;
+    },
+  };
+
+  const datasets = [
+    {
+      label: 'Price',
+      data: plottedValues,
+      borderColor: '#2ecc71',
+      backgroundColor: 'rgba(46,204,113,.14)',
+      fill: hasMultiplePoints,
+      tension: 0.12,
+      spanGaps: false,
+      clip: 5,
+      pointRadius: 0,
+      borderWidth: 2,
+      order: 0,
+    },
+    {
+      label: 'SMA 20',
+      data: sma20,
+      borderColor: '#f1c40f',
+      borderDash: [6, 4],
+      fill: false,
+      tension: 0,
+      spanGaps: false,
+      clip: 5,
+      pointRadius: 0,
+      borderWidth: 2,
+      order: 1,
+    },
+    {
+      label: 'SMA 50',
+      data: sma50,
+      borderColor: '#3498db',
+      borderDash: [4, 4],
+      fill: false,
+      tension: 0,
+      spanGaps: false,
+      clip: 5,
+      pointRadius: 0,
+      borderWidth: 2,
+      order: 1,
+    },
+    {
+      label: 'EMA 12',
+      data: ema12,
+      borderColor: '#e74c3c',
+      borderDash: [],
+      fill: false,
+      tension: 0.12,
+      spanGaps: false,
+      clip: 5,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      order: 2,
+    },
+    {
+      label: 'EMA 26',
+      data: ema26,
+      borderColor: '#8e44ad',
+      borderDash: [2, 2],
+      fill: false,
+      tension: 0.1,
+      spanGaps: false,
+      clip: 5,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      order: 2,
+    },
+    {
+      label: 'Events',
+      data: eventSeries,
+      borderColor: 'transparent',
+      backgroundColor: 'transparent',
+      pointRadius: (ctx) => (ctx?.raw && ctx.raw.events ? 5 : 0),
+      pointHoverRadius: (ctx) => (ctx?.raw && ctx.raw.events ? 7 : 0),
+      pointBackgroundColor: (ctx) => ctx?.raw?.style?.color || EVENT_TYPE_META.default.color,
+      pointBorderColor: (ctx) => ctx?.raw?.style?.color || EVENT_TYPE_META.default.color,
+      pointStyle: (ctx) => ctx?.raw?.style?.shape || EVENT_TYPE_META.default.shape,
+      hitRadius: 14,
+      showLine: false,
+      order: 3,
+      metaType: 'event',
+    },
+  ];
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation,
+    interaction: { mode: 'nearest', intersect: false },
+    scales: {
+      y: { grid: { color: 'rgba(255,255,255,.08)' }, ticks: { color: '#cfd3da' } },
+      x: { grid: { color: 'rgba(255,255,255,.06)' }, ticks: { color: '#cfd3da', maxTicksLimit: xTickLimit } },
+    },
+    plugins: {
+      legend: { labels: { color: '#cfd3da' } },
+      tooltip: { mode: 'index', intersect: false, callbacks: tooltipCallbacks },
+    },
+  };
 
   if (!priceChart) {
     // eslint-disable-next-line no-undef
@@ -1027,58 +1399,25 @@ function renderChart(rows, intraday) {
       type: 'line',
       data: {
         labels,
-        datasets: [
-          {
-            label: 'Price',
-            data: plottedValues,
-            borderColor: '#2ecc71',
-            backgroundColor: 'rgba(46,204,113,.14)',
-            fill: hasMultiplePoints,
-            tension: 0.12,
-            spanGaps: false,
-            clip: 5,
-            pointRadius: 0,
-            borderWidth: 2,
-          },
-          {
-            label: 'SMA 20',
-            data: ma,
-            borderColor: '#f1c40f',
-            borderDash: [6, 4],
-            fill: false,
-            tension: 0,
-            spanGaps: false,
-            clip: 5,
-            pointRadius: 0,
-            borderWidth: 2,
-          },
-        ],
+        datasets,
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation,
-        interaction: { mode: 'nearest', intersect: false },
-        scales: {
-          y: { grid: { color: 'rgba(255,255,255,.08)' }, ticks: { color: '#cfd3da' } },
-          x: { grid: { color: 'rgba(255,255,255,.06)' }, ticks: { color: '#cfd3da', maxTicksLimit: xTickLimit } },
-        },
-        plugins: { legend: { labels: { color: '#cfd3da' } }, tooltip: { mode: 'index', intersect: false } },
-      },
+      options: chartOptions,
     });
   } else {
     priceChart.data.labels = labels;
-    if (priceChart.data.datasets[0]) {
-      priceChart.data.datasets[0].data = plottedValues;
-      priceChart.data.datasets[0].fill = hasMultiplePoints;
-    }
-    if (priceChart.data.datasets[1]) {
-      priceChart.data.datasets[1].data = ma;
-    }
-    if (priceChart.options?.scales?.x?.ticks) {
-      priceChart.options.scales.x.ticks.maxTicksLimit = xTickLimit;
-    }
-    priceChart.options.animation = animation;
+    priceChart.data.datasets = datasets;
+    priceChart.options.animation = chartOptions.animation;
+    priceChart.options.interaction = chartOptions.interaction;
+    priceChart.options.scales = {
+      ...(priceChart.options.scales || {}),
+      y: { ...(priceChart.options.scales?.y || {}), ...chartOptions.scales.y },
+      x: { ...(priceChart.options.scales?.x || {}), ...chartOptions.scales.x },
+    };
+    priceChart.options.plugins = {
+      ...(priceChart.options.plugins || {}),
+      legend: { ...(priceChart.options.plugins?.legend || {}), ...chartOptions.plugins.legend },
+      tooltip: { ...(priceChart.options.plugins?.tooltip || {}), ...chartOptions.plugins.tooltip },
+    };
     priceChart.update('active');
   }
 
@@ -1133,6 +1472,7 @@ async function loadTimeframe(tf, { force = false } = {}) {
     const params = intraday
       ? { symbol: currentSymbol, kind: 'intraday', interval, limit }
       : { symbol: currentSymbol, kind: 'eod', limit };
+    const eventsPromise = loadChartEventsForSymbol(currentSymbol);
     const res = await callTiingo(params);
     const rows = Array.isArray(res?.data)
       ? res.data.slice().sort((a, b) => new Date(a.date) - new Date(b.date))
@@ -1142,7 +1482,8 @@ async function loadTimeframe(tf, { force = false } = {}) {
       updateChartStatus(res?.meta || {}, res?.warning || 'No data returned', 0);
       return;
     }
-    renderChart(rows, intraday);
+    const events = await eventsPromise;
+    renderChart(rows, intraday, events);
     updateChartStatus(res?.meta || {}, res?.warning || '', rows.length);
     if (res?.meta) updateApiBadge(res.meta);
     lastChartSymbol = currentSymbol;
@@ -1219,9 +1560,11 @@ async function init() {
   startWatchlistAutoRefresh();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  init().catch((err) => {
-    console.error('App initialisation failed', err);
-    showError('Unable to start the trading desk. Please reload.');
-  });
-}, { once: true });
+if (typeof document !== 'undefined' && document?.addEventListener) {
+  document.addEventListener('DOMContentLoaded', () => {
+    init().catch((err) => {
+      console.error('App initialisation failed', err);
+      showError('Unable to start the trading desk. Please reload.');
+    });
+  }, { once: true });
+}
