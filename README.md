@@ -7,3 +7,7 @@ AI Analyst, Quant Screener, Valuation Lab, and Professional Desk experiences.
 
 - Automated unit tests: `npm test`
 - Manual regression playbook: [`docs/manual-testing/e2e-regression-plan.md`](docs/manual-testing/e2e-regression-plan.md)
+
+### Documentation
+
+- Platform usage guide: [`docs/platform-user-guide.md`](docs/platform-user-guide.md)
