@@ -2,6 +2,7 @@ import { createRenderQueue, createRequestCache } from './utils/browser-cache.js'
 import { enrichError, getFriendlyErrorMessage } from './utils/frontend-errors.js';
 import { loadPreferences, updatePreferences } from './utils/user-preferences.js';
 import { createLatestPromiseRunner, createOperationTokenSource } from './utils/task-guards.js';
+import { createPassiveRuntimeMonitor } from './utils/runtime-monitor.js';
 
 const createMemoryStorage = () => {
   const store = new Map();
@@ -47,6 +48,130 @@ if (typeof document === 'undefined') {
   };
 }
 
+const runtimeMonitorHandle = createPassiveRuntimeMonitor({ heartbeatInterval: 120_000 });
+const appMonitor = runtimeMonitorHandle.exposeGlobal('__NETLIFYTRADING_MONITOR__');
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('error', (event) => {
+    if (!event) return;
+    const error = event.error || new Error(event.message || 'Unhandled error');
+    appMonitor.trackError(error, 'window.error', {
+      source: event.filename || '',
+      line: event.lineno,
+      column: event.colno,
+    });
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    if (!event) return;
+    appMonitor.trackError(event.reason, 'window.unhandledrejection');
+  });
+}
+
+const createMonitoredCache = (name, options) => {
+  const baseOptions = options || {};
+  const originalOnEvict = typeof baseOptions.onEvict === 'function' ? baseOptions.onEvict : null;
+  const cache = createRequestCache({
+    ...baseOptions,
+    onEvict: (details) => {
+      const payload = {
+        cacheName: name,
+        reason: details?.reason || '',
+        key: details?.key || '',
+        pending: Boolean(details?.pending),
+        hasValue: Boolean(details?.hasValue),
+        expiresAt: details?.expiresAt,
+      };
+      const level = payload.reason === 'error' ? 'error' : 'debug';
+      appMonitor.recordEvent({
+        type: 'cache.eviction',
+        level,
+        message: `${name} cache eviction (${payload.reason || 'unknown'})`,
+        data: payload,
+      });
+      if (originalOnEvict) {
+        try {
+          originalOnEvict(details);
+        } catch (error) {
+          appMonitor.trackError(error, 'cache.onEvict', { cacheName: name });
+        }
+      }
+    },
+  });
+
+  const updateGauges = () => {
+    const stats = cache.stats();
+    appMonitor.setGauge(`cache.${name}.size`, stats.size);
+    appMonitor.setGauge(`cache.${name}.hits`, stats.hits);
+    appMonitor.setGauge(`cache.${name}.misses`, stats.misses);
+    appMonitor.setGauge(`cache.${name}.loads`, stats.loads);
+    appMonitor.setGauge(`cache.${name}.errors`, stats.errors);
+    appMonitor.setGauge(`cache.${name}.revalidations`, stats.revalidations);
+    appMonitor.setGauge(`cache.${name}.evictions`, stats.evictions);
+  };
+
+  const wrapSyncMethod = (method) => {
+    if (typeof cache[method] !== 'function') return;
+    const original = cache[method].bind(cache);
+    cache[method] = (...args) => {
+      const result = original(...args);
+      updateGauges();
+      return result;
+    };
+  };
+
+  const originalResolve = cache.resolve.bind(cache);
+  cache.resolve = (key, loader, ttl) => {
+    const resolveTracker = appMonitor.trackOperationStart(`${name}.cache.resolve`, { key });
+    let loaderInvoked = false;
+    const monitoredLoader = async () => {
+      loaderInvoked = true;
+      const loadTracker = appMonitor.trackOperationStart(`${name}.cache.load`, { key });
+      try {
+        const value = await loader();
+        loadTracker.succeed({ key });
+        return value;
+      } catch (error) {
+        loadTracker.fail(error);
+        throw error;
+      }
+    };
+
+    let result;
+    try {
+      result = originalResolve(key, monitoredLoader, ttl);
+    } catch (error) {
+      resolveTracker.fail(error);
+      updateGauges();
+      throw error;
+    }
+
+    const onSuccess = (value, stage) => {
+      resolveTracker.succeed({ key, stage });
+      updateGauges();
+      return value;
+    };
+
+    const onFailure = (error) => {
+      resolveTracker.fail(error);
+      updateGauges();
+      throw error;
+    };
+
+    if (result && typeof result.then === 'function') {
+      return result.then(
+        (value) => onSuccess(value, loaderInvoked ? 'loaded' : 'cached-promise'),
+        (error) => onFailure(error),
+      );
+    }
+
+    return onSuccess(result, loaderInvoked ? 'loaded-sync' : 'cached');
+  };
+
+  ['set', 'delete', 'clear', 'prune'].forEach(wrapSyncMethod);
+  updateGauges();
+  return cache;
+};
+
 let userPreferences = loadPreferences();
 const applyPreferenceUpdate = (patch) => {
   userPreferences = updatePreferences(patch || {});
@@ -60,17 +185,29 @@ const applyPreferenceUpdate = (patch) => {
 /* DOM helpers */
 const $ = (id) => document.getElementById(id);
 let loadingCounter = 0;
+let lastErrorMessage = '';
 function showLoading(on) {
   const el = $('loading');
   if (!el) return;
   loadingCounter = Math.max(0, loadingCounter + (on ? 1 : -1));
   el.style.display = loadingCounter > 0 ? 'flex' : 'none';
+  appMonitor.setGauge('ui.loadingCounter', loadingCounter);
 }
 function showError(msg) {
   const el = $('error');
   if (!el) return;
+  const normalisedMessage = msg || '';
   el.textContent = msg || '';
   el.style.display = msg ? 'block' : 'none';
+  appMonitor.setGauge('ui.errorVisible', msg ? 1 : 0);
+  if (normalisedMessage !== lastErrorMessage) {
+    if (normalisedMessage) {
+      appMonitor.trackWarning('UI error banner', { message: normalisedMessage });
+    } else if (lastErrorMessage) {
+      appMonitor.recordEvent({ type: 'ui', level: 'debug', message: 'Error banner cleared' });
+    }
+    lastErrorMessage = normalisedMessage;
+  }
 }
 
 /* Formatting */
@@ -85,10 +222,10 @@ const fmtPct = (n) => {
 
 /* API wrapper */
 const API = '/api';
-const tiingoRequestCache = createRequestCache({ ttl: 30000, maxEntries: 80 });
-const searchResultCache = createRequestCache({ ttl: 120000, maxEntries: 120 });
-const newsRequestCache = createRequestCache({ ttl: 5 * 60 * 1000, maxEntries: 12 });
-const eventFeedCache = createRequestCache({ ttl: 3 * 60 * 1000, maxEntries: 32 });
+const tiingoRequestCache = createMonitoredCache('tiingo', { ttl: 30000, maxEntries: 80 });
+const searchResultCache = createMonitoredCache('search', { ttl: 120000, maxEntries: 120 });
+const newsRequestCache = createMonitoredCache('news', { ttl: 5 * 60 * 1000, maxEntries: 12 });
+const eventFeedCache = createMonitoredCache('eventFeed', { ttl: 3 * 60 * 1000, maxEntries: 32 });
 
 const scheduleWatchlistRender = createRenderQueue();
 const scheduleMoversRender = createRenderQueue();
@@ -139,6 +276,7 @@ async function callTiingo(params, options = {}) {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
   });
   const key = url.toString();
+  const requestTracker = appMonitor.trackOperationStart('tiingo.request', { key, params });
   if (!forceRefresh) {
     const cached = tiingoRequestCache.get(key);
     if (cached) {
@@ -155,6 +293,7 @@ async function callTiingo(params, options = {}) {
       } else if (!silent) {
         showError('');
       }
+      requestTracker.succeed({ cached: true, reason: cached?.meta?.reason || 'cache-hit' });
       return cached;
     }
   }
@@ -162,31 +301,45 @@ async function callTiingo(params, options = {}) {
   const ttl = cacheTtl ?? defaultTiingoCacheTtl(params);
   try {
     const loader = async () => {
-      const resp = await fetch(url, { headers: { accept: 'application/json' } });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        const error = new Error(data?.warning || data?.error || resp.statusText || 'Tiingo request failed.');
-        error.status = resp.status;
-        error.response = data;
+      const fetchTracker = appMonitor.trackOperationStart('tiingo.fetch', { key, url: url.toString() });
+      let completed = false;
+      try {
+        const resp = await fetch(url, { headers: { accept: 'application/json' } });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const error = new Error(data?.warning || data?.error || resp.statusText || 'Tiingo request failed.');
+          error.status = resp.status;
+          error.response = data;
+          fetchTracker.fail(error);
+          completed = true;
+          throw error;
+        }
+        if (data?.warning) {
+          console.warn('tiingo warning:', data.warning);
+          appMonitor.trackWarning('Tiingo response warning', { key, warning: data.warning });
+        }
+        fetchTracker.succeed({ status: resp.status });
+        completed = true;
+        const responseMeta = data?.meta && typeof data.meta === 'object' ? { ...data.meta } : {};
+        const meta = {
+          ...responseMeta,
+          source: resp.headers.get('x-tiingo-source') || responseMeta.source || '',
+          fallback: resp.headers.get('x-tiingo-fallback') || responseMeta.fallback || '',
+          tokenPreview: resp.headers.get('x-tiingo-token-preview') || '',
+          chosenKey: resp.headers.get('x-tiingo-chosen-key') || '',
+          kind: params?.kind || responseMeta.kind || '',
+        };
+        return {
+          body: data,
+          data: data?.data,
+          symbol: data?.symbol || params?.symbol || '',
+          warning: data?.warning || '',
+          meta,
+        };
+      } catch (error) {
+        if (!completed) fetchTracker.fail(error);
         throw error;
       }
-      if (data?.warning) console.warn('tiingo warning:', data.warning);
-      const responseMeta = data?.meta && typeof data.meta === 'object' ? { ...data.meta } : {};
-      const meta = {
-        ...responseMeta,
-        source: resp.headers.get('x-tiingo-source') || responseMeta.source || '',
-        fallback: resp.headers.get('x-tiingo-fallback') || responseMeta.fallback || '',
-        tokenPreview: resp.headers.get('x-tiingo-token-preview') || '',
-        chosenKey: resp.headers.get('x-tiingo-chosen-key') || '',
-        kind: params?.kind || responseMeta.kind || '',
-      };
-      return {
-        body: data,
-        data: data?.data,
-        symbol: data?.symbol || params?.symbol || '',
-        warning: data?.warning || '',
-        meta,
-      };
     };
 
     const payload = await tiingoRequestCache.resolve(key, loader, ttl);
@@ -205,6 +358,7 @@ async function callTiingo(params, options = {}) {
       }
     }
 
+    requestTracker.succeed({ warning: Boolean(payload?.warning), reason: payload?.meta?.reason || 'ok' });
     return payload;
   } catch (err) {
     const enhanced = enrichError(err, {
@@ -216,6 +370,8 @@ async function callTiingo(params, options = {}) {
     } else {
       console.warn('Tiingo request failed', enhanced);
     }
+    requestTracker.fail(enhanced);
+    appMonitor.trackError(enhanced, 'tiingo.request', { key, params });
     // ensure bad entries aren’t retained
     tiingoRequestCache.delete(key);
     throw enhanced;
