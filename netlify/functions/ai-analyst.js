@@ -1,6 +1,17 @@
 import handleTiingoRequest from './tiingo.js';
 import { summarizeValuationNarrative } from './lib/valuation.js';
 import { getGeminiKeyDetail, getGeminiModel, generateGeminiContent } from './lib/gemini.js';
+import { getCodexKeyDetail, getCodexModel, generateCodexContent } from './lib/codex.js';
+import { getGrokKeyDetail, getGrokModel, generateGrokContent } from './lib/grok.js';
+import {
+  priceToEarnings,
+  priceToSales,
+  debtToEquity,
+  freeCashFlowYield,
+  netDebtToEBITDA,
+  returnOnEquity,
+  toQuantNumber,
+} from '../../utils/quant-math.js';
 
 const SYSTEM_PROMPT = "You are a senior equity research analyst. Based on the following financial data, news, and filings, provide a concise, single-paragraph investment thesis. Include key valuation metrics, potential risks, and a concluding sentence on the equity's outlook.";
 
@@ -173,11 +184,73 @@ const formatActionsSection = (actions = {}) => {
   return lines.join('\n');
 };
 
+const computeQuantMetrics = (datasets = {}) => {
+  const valuation = datasets?.valuation?.valuation || {};
+  const fundamentals = datasets?.fundamentals || {};
+  const metrics = fundamentals?.metrics || {};
+  const latest = fundamentals?.latest || {};
+
+  const priceSeries = Array.isArray(datasets?.priceHistory) ? datasets.priceHistory : [];
+  const lastPricePoint = priceSeries.length ? priceSeries[priceSeries.length - 1] : {};
+  const price = toQuantNumber(
+    valuation?.price
+      ?? datasets?.valuation?.price
+      ?? metrics?.price
+      ?? lastPricePoint?.close
+      ?? lastPricePoint?.price
+      ?? lastPricePoint?.last,
+  );
+
+  const eps = toQuantNumber(metrics?.earningsPerShare ?? valuation?.earningsPerShare);
+  const revenuePerShare = toQuantNumber(metrics?.revenuePerShare ?? valuation?.revenuePerShare);
+  const freeCashFlowPerShare = toQuantNumber(metrics?.freeCashFlowPerShare ?? valuation?.freeCashFlowPerShare);
+  const netIncome = toQuantNumber(latest?.netIncome ?? valuation?.netIncome ?? metrics?.netIncome);
+  const totalDebt = toQuantNumber(latest?.totalDebt ?? metrics?.totalDebt ?? valuation?.totalDebt);
+  const netDebt = toQuantNumber(latest?.netDebt ?? valuation?.netDebt ?? metrics?.netDebt ?? totalDebt);
+  const shareholdersEquity = toQuantNumber(
+    latest?.shareholderEquity
+      ?? latest?.totalEquity
+      ?? valuation?.shareholderEquity
+      ?? metrics?.shareholderEquity,
+  );
+  const ebitda = toQuantNumber(latest?.ebitda ?? valuation?.ebitda ?? metrics?.ebitda);
+
+  return {
+    priceToEarnings: priceToEarnings(price, eps),
+    priceToSales: priceToSales(price, revenuePerShare),
+    freeCashFlowYield: freeCashFlowYield(price, freeCashFlowPerShare),
+    debtToEquity: debtToEquity(totalDebt, shareholdersEquity),
+    netDebtToEBITDA: netDebtToEBITDA(netDebt, ebitda),
+    returnOnEquity: returnOnEquity(netIncome, shareholdersEquity),
+  };
+};
+
+const fmtMultiple = (value) => (typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}x` : 'n/a');
+const fmtRatio = (value) => (typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : 'n/a');
+
+const formatQuantSection = (metrics = {}) => {
+  return [
+    'Quantitative Ratios:',
+    `- P/E: ${fmtMultiple(metrics.priceToEarnings)}`,
+    `- P/S: ${fmtMultiple(metrics.priceToSales)}`,
+    `- FCF Yield: ${typeof metrics.freeCashFlowYield === 'number' && Number.isFinite(metrics.freeCashFlowYield)
+      ? `${(metrics.freeCashFlowYield * 100).toFixed(1)}%`
+      : 'n/a'}`,
+    `- Debt/Equity: ${fmtRatio(metrics.debtToEquity)}`,
+    `- Net Debt/EBITDA: ${fmtRatio(metrics.netDebtToEBITDA)}`,
+    `- Return on Equity: ${typeof metrics.returnOnEquity === 'number' && Number.isFinite(metrics.returnOnEquity)
+      ? `${(metrics.returnOnEquity * 100).toFixed(1)}%`
+      : 'n/a'}`,
+  ].join('\n');
+};
+
 const buildUserPrompt = (symbol, datasets) => {
+  const quantMetrics = datasets?.quantMetrics || computeQuantMetrics(datasets);
   const sections = [
     `Ticker: ${symbol}`,
     datasets.valuation ? formatValuationSection(symbol, datasets.valuation) : `Valuation snapshot unavailable for ${symbol}.`,
     datasets.fundamentals ? formatFundamentalSection(datasets.fundamentals) : 'Key Fundamental Metrics: unavailable.',
+    formatQuantSection(quantMetrics),
     `Price Performance: ${summarizePriceHistory(symbol, datasets.priceHistory)}`,
     formatNewsSection(datasets.news),
     formatDocumentSection(datasets.documents),
@@ -208,6 +281,9 @@ const gatherTiingoIntel = async (symbol, { newsLimit = DEFAULT_NEWS_LIMIT, docum
     actions: actionsRes?.body?.data || {},
     priceHistory: Array.isArray(priceRes?.body?.data) ? priceRes.body.data : [],
   };
+
+  const quantMetrics = computeQuantMetrics(datasets);
+  datasets.quantMetrics = quantMetrics;
 
   const warnings = mergeWarnings(
     valuationRes?.warning,
@@ -277,34 +353,93 @@ export async function handleRequest(request) {
     const geminiKey = geminiKeyDetail.token;
     const geminiModel = getGeminiModel();
 
-    let narrativeSource = 'gemini';
+    let narrativeSource = 'chatgpt-codex';
     let narrativeText = '';
+    let codexPayload = null;
+    let grokPayload = null;
     let geminiPayload = null;
+    let codexError = '';
+    let grokError = '';
     let geminiError = '';
 
-    if (geminiKey) {
+    const codexKeyDetail = getCodexKeyDetail();
+    const codexKey = codexKeyDetail.token;
+    const codexModel = getCodexModel();
+    const grokKeyDetail = getGrokKeyDetail();
+    const grokKey = grokKeyDetail.token;
+    const grokModel = getGrokModel();
+
+    if (codexKey) {
       try {
-        const result = await generateGeminiContent({
-          apiKey: geminiKey,
-          model: geminiModel,
+        const codexResult = await generateCodexContent({
+          apiKey: codexKey,
+          model: codexModel,
           systemPrompt: SYSTEM_PROMPT,
           userPrompt,
         });
-        narrativeText = result.text?.trim() || '';
-        geminiPayload = {
-          model: result.model,
-          hasText: Boolean(result.text),
+        codexPayload = {
+          model: codexResult.model,
+          hasText: Boolean(codexResult.text),
         };
+        narrativeText = codexResult.text?.trim() || '';
       } catch (error) {
-        narrativeSource = 'fallback';
-        geminiError = error?.message || 'Gemini request failed.';
+        codexError = error?.message || 'ChatGPT Codex request failed.';
       }
     } else {
-      narrativeSource = 'fallback';
-      geminiError = 'Gemini API key missing.';
+      codexError = 'ChatGPT Codex API key missing.';
     }
 
-    if (narrativeSource === 'fallback') {
+    if (!narrativeText) {
+      narrativeSource = 'grok';
+      if (grokKey) {
+        try {
+          const grokResult = await generateGrokContent({
+            apiKey: grokKey,
+            model: grokModel,
+            systemPrompt: SYSTEM_PROMPT,
+            userPrompt,
+          });
+          grokPayload = {
+            model: grokResult.model,
+            hasText: Boolean(grokResult.text),
+          };
+          narrativeText = grokResult.text?.trim() || '';
+        } catch (error) {
+          narrativeSource = 'gemini';
+          grokError = error?.message || 'Grok request failed.';
+        }
+      } else {
+        narrativeSource = 'gemini';
+        grokError = 'Grok API key missing.';
+      }
+    }
+
+    if (!narrativeText) {
+      if (narrativeSource !== 'gemini') narrativeSource = 'gemini';
+      if (geminiKey) {
+        try {
+          const result = await generateGeminiContent({
+            apiKey: geminiKey,
+            model: geminiModel,
+            systemPrompt: SYSTEM_PROMPT,
+            userPrompt,
+          });
+          narrativeText = result.text?.trim() || '';
+          geminiPayload = {
+            model: result.model,
+            hasText: Boolean(result.text),
+          };
+        } catch (error) {
+          narrativeSource = 'fallback';
+          geminiError = error?.message || 'Gemini request failed.';
+        }
+      } else {
+        narrativeSource = 'fallback';
+        geminiError = 'Gemini API key missing.';
+      }
+    }
+
+    if (narrativeSource === 'fallback' || !narrativeText) {
       const fallbackNarrative = datasets?.valuation?.narrative
         || summarizeValuationNarrative(symbol, datasets?.valuation?.valuation)
         || `${symbol} valuation narrative unavailable.`;
@@ -313,6 +448,8 @@ export async function handleRequest(request) {
 
     const combinedWarnings = mergeWarnings(
       ...tiingoWarnings,
+      codexError,
+      grokError,
       geminiError,
     );
 
@@ -331,20 +468,35 @@ export async function handleRequest(request) {
           }]),
         ),
       },
+      quant: datasets.quantMetrics,
       prompt: {
         system: SYSTEM_PROMPT,
         user: userPrompt,
       },
       narrative: {
         text: narrativeText,
-        source: narrativeSource,
+        source: narrativeText && narrativeSource ? narrativeSource : 'fallback',
+        codex: codexPayload,
+        grok: grokPayload,
         gemini: geminiPayload,
-        error: geminiError || undefined,
+        errors: {
+          codex: codexError || undefined,
+          grok: grokError || undefined,
+          gemini: geminiError || undefined,
+        },
       },
       warnings: combinedWarnings,
       gemini: {
         model: geminiModel,
         keyHint: geminiKeyDetail.key || '',
+      },
+      codex: {
+        model: codexModel,
+        keyHint: codexKeyDetail.key || '',
+      },
+      grok: {
+        model: grokModel,
+        keyHint: grokKeyDetail.key || '',
       },
     };
 
