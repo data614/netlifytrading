@@ -2,18 +2,77 @@ const DEFAULT_RAF = typeof window !== 'undefined' && typeof window.requestAnimat
   ? window.requestAnimationFrame.bind(window)
   : (fn) => setTimeout(fn, 16);
 
+const DEFAULT_NOW = () => Date.now();
+const NOOP = () => {};
+
+const safeInvoke = (handler, payload) => {
+  if (typeof handler !== 'function') return;
+  try {
+    handler(payload);
+  } catch (error) {
+    console.error('request cache onEvict handler failed', error);
+  }
+};
+
 /**
- * Creates a lightweight in-memory cache for browser requests with TTL support.
- * The cache deduplicates concurrent lookups and evicts the least recently used entries.
+ * Creates a lightweight in-memory cache for browser requests with TTL support and
+ * optional eviction diagnostics.
+ * The cache deduplicates concurrent lookups, exposes runtime statistics and
+ * evicts the least recently used entries.
  * @param {object} [options]
  * @param {number} [options.ttl=30000] Default time-to-live in milliseconds.
  * @param {number} [options.maxEntries=64] Maximum number of cached entries.
+ * @param {(details: { key: string, reason: string, value: *, hasValue: boolean, pending: boolean, expiresAt: number|undefined }) => void} [options.onEvict]
+ *   Optional callback invoked when entries leave the cache.
+ * @param {() => number} [options.now] Custom clock used for TTL computations, mainly for testing.
  */
-export function createRequestCache({ ttl = 30000, maxEntries = 64 } = {}) {
+export function createRequestCache({ ttl = 30000, maxEntries = 64, onEvict = NOOP, now: nowProvider } = {}) {
   const store = new Map();
   const order = new Map();
+  const now = typeof nowProvider === 'function' ? () => nowProvider() : DEFAULT_NOW;
+  const evictCallback = typeof onEvict === 'function' ? onEvict : NOOP;
 
-  const now = () => Date.now();
+  const stats = {
+    hits: 0,
+    misses: 0,
+    loads: 0,
+    revalidations: 0,
+    evictions: 0,
+    stale: 0,
+    errors: 0,
+  };
+
+  const resolveTtl = (customTtl) => {
+    if (Number.isFinite(customTtl) && customTtl > 0) return customTtl;
+    if (customTtl === 0) return 0;
+    if (customTtl === Infinity) return Infinity;
+    return ttl;
+  };
+
+  const computeExpiry = (ttlMs) => {
+    if (ttlMs === Infinity) return Infinity;
+    if (ttlMs > 0) return now() + ttlMs;
+    return Infinity;
+  };
+
+  const isExpired = (entry) => Boolean(entry && entry.expiresAt !== Infinity && entry.expiresAt <= now());
+
+  const evictEntry = (key, reason) => {
+    if (!store.has(key)) return false;
+    const entry = store.get(key);
+    store.delete(key);
+    order.delete(key);
+    stats.evictions += 1;
+    safeInvoke(evictCallback, {
+      key,
+      reason,
+      value: entry && 'value' in entry ? entry.value : undefined,
+      hasValue: Boolean(entry && 'value' in entry),
+      pending: Boolean(entry && entry.promise),
+      expiresAt: entry ? entry.expiresAt : undefined,
+    });
+    return true;
+  };
 
   const touch = (key) => {
     if (!store.has(key)) return;
@@ -21,22 +80,13 @@ export function createRequestCache({ ttl = 30000, maxEntries = 64 } = {}) {
     order.set(key, true);
     while (order.size > maxEntries) {
       const oldest = order.keys().next().value;
-      order.delete(oldest);
-      store.delete(oldest);
+      evictEntry(oldest, 'capacity');
     }
-  };
-
-  const isExpired = (entry) => entry && entry.expiresAt !== Infinity && entry.expiresAt <= now();
-
-  const resolveTtl = (customTtl) => {
-    if (Number.isFinite(customTtl) && customTtl > 0) return customTtl;
-    if (customTtl === 0) return 0;
-    return ttl;
   };
 
   const setValue = (key, value, customTtl) => {
     const ttlMs = resolveTtl(customTtl);
-    const expiresAt = ttlMs > 0 ? now() + ttlMs : Infinity;
+    const expiresAt = computeExpiry(ttlMs);
     store.set(key, { value, expiresAt });
     touch(key);
     return value;
@@ -44,19 +94,22 @@ export function createRequestCache({ ttl = 30000, maxEntries = 64 } = {}) {
 
   const getValue = (key) => {
     const entry = store.get(key);
-    if (!entry) return undefined;
+    if (!entry) {
+      stats.misses += 1;
+      return undefined;
+    }
     if (isExpired(entry)) {
-      store.delete(key);
-      order.delete(key);
+      stats.stale += 1;
+      stats.misses += 1;
+      evictEntry(key, 'expired');
       return undefined;
     }
     if ('value' in entry) {
+      stats.hits += 1;
       touch(key);
       return entry.value;
     }
-    if (entry.promise) {
-      return undefined;
-    }
+    stats.revalidations += 1;
     return undefined;
   };
 
@@ -66,19 +119,32 @@ export function createRequestCache({ ttl = 30000, maxEntries = 64 } = {}) {
 
     if (existing) {
       if (isExpired(existing)) {
-        store.delete(key);
-        order.delete(key);
+        stats.stale += 1;
+        stats.misses += 1;
+        evictEntry(key, 'expired');
       } else if ('value' in existing) {
+        stats.hits += 1;
         touch(key);
         return existing.value;
       } else if (existing.promise) {
+        stats.revalidations += 1;
         return existing.promise;
       }
+    } else {
+      stats.misses += 1;
     }
 
     if (ttlMs === 0) {
-      return loader();
+      stats.loads += 1;
+      try {
+        return await loader();
+      } catch (error) {
+        stats.errors += 1;
+        throw error;
+      }
     }
+
+    stats.loads += 1;
 
     const promise = (async () => {
       try {
@@ -86,16 +152,28 @@ export function createRequestCache({ ttl = 30000, maxEntries = 64 } = {}) {
         setValue(key, result, customTtl);
         return result;
       } catch (error) {
+        stats.errors += 1;
         store.delete(key);
         order.delete(key);
         throw error;
       }
     })();
 
-    store.set(key, { promise, expiresAt: now() + ttlMs });
+    store.set(key, { promise, expiresAt: computeExpiry(ttlMs) });
     touch(key);
     return promise;
   };
+
+  const statsSnapshot = () => ({
+    hits: stats.hits,
+    misses: stats.misses,
+    loads: stats.loads,
+    revalidations: stats.revalidations,
+    evictions: stats.evictions,
+    stale: stats.stale,
+    errors: stats.errors,
+    size: store.size,
+  });
 
   return {
     /**
@@ -117,16 +195,30 @@ export function createRequestCache({ ttl = 30000, maxEntries = 64 } = {}) {
      * @param {number} [customTtl]
      */
     resolve: resolveValue,
-    /** Clears the cache. */
+    /** Clears the cache, issuing eviction callbacks for each entry. */
     clear() {
-      store.clear();
-      order.clear();
+      const keys = Array.from(store.keys());
+      keys.forEach((key) => {
+        evictEntry(key, 'clear');
+      });
     },
     /** Removes a single cache entry. */
     delete(key) {
-      store.delete(key);
-      order.delete(key);
+      evictEntry(key, 'manual');
     },
+    /** Removes all expired entries proactively. */
+    prune() {
+      const keys = Array.from(order.keys());
+      keys.forEach((key) => {
+        const entry = store.get(key);
+        if (entry && isExpired(entry)) {
+          stats.stale += 1;
+          evictEntry(key, 'expired');
+        }
+      });
+    },
+    /** Returns a snapshot of cache statistics. */
+    stats: statsSnapshot,
   };
 }
 
