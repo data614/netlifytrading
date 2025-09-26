@@ -34,6 +34,26 @@
             <input id="upsideFilter" type="number" value="5" step="1" />
           </label>
           <label class="field">
+            <span>Maximum upside (%)</span>
+            <input id="upsideMaxFilter" type="number" placeholder="120" />
+          </label>
+        </div>
+        <div class="control-grid">
+          <label class="field">
+            <span>Market cap minimum ($B)</span>
+            <input id="marketCapMin" type="number" placeholder="10" min="0" step="10" />
+          </label>
+          <label class="field">
+            <span>Market cap maximum ($B)</span>
+            <input id="marketCapMax" type="number" placeholder="500" min="0" step="10" />
+          </label>
+        </div>
+        <label class="field">
+          <span>Sector filter (comma separated)</span>
+          <input id="sectorFilter" type="text" placeholder="Technology, Financials" />
+        </label>
+        <div class="control-grid">
+          <label class="field">
             <span>Maximum tickers per batch</span>
             <input id="batchSize" type="number" value="6" min="1" max="20" />
           </label>
@@ -62,6 +82,8 @@
             <thead>
               <tr>
                 <th data-key="symbol">Symbol</th>
+                <th data-key="sector">Sector</th>
+                <th data-key="marketCap">Market cap</th>
                 <th data-key="price">Price</th>
                 <th data-key="fairValue">Fair value</th>
                 <th data-key="upside">Upside</th>
