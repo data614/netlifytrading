@@ -36,17 +36,32 @@ const API = '/api';
 const tiingoRequestCache = createRequestCache({ ttl: 30000, maxEntries: 80 });
 const searchResultCache = createRequestCache({ ttl: 120000, maxEntries: 120 });
 const newsRequestCache = createRequestCache({ ttl: 5 * 60 * 1000, maxEntries: 12 });
+const eventFeedCache = createRequestCache({ ttl: 3 * 60 * 1000, maxEntries: 32 });
 
 const scheduleWatchlistRender = createRenderQueue();
 const scheduleMoversRender = createRenderQueue();
 const scheduleNewsRender = createRenderQueue();
 const scheduleSearchRender = createRenderQueue();
+const scheduleEventFeedRender = createRenderQueue();
 
 const timeLabelFormatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 const dateLabelFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const eventDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+const eventDateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+});
 let timeframeButtons = [];
 let timeframeLoading = false;
 let lastChartSymbol = '';
+let eventFeedSymbolInFlight = '';
 
 function defaultTiingoCacheTtl(params = {}) {
   const kind = String(params?.kind || '').toLowerCase();
@@ -168,6 +183,14 @@ let watchlistRefreshTimer = null;
 
 const WATCHLIST_REFRESH_INTERVAL = 60 * 1000;
 const WATCHLIST_FETCH_LIMIT = 12;
+const EVENT_FEED_LIMIT = 40;
+const EVENT_TYPE_LABELS = {
+  news: 'News',
+  filing: 'SEC Filing',
+  document: 'Document',
+  dividend: 'Dividend',
+  split: 'Stock Split',
+};
 const CLOCK_ZONES = [
   { label: 'New York (ET)', tz: 'America/New_York' },
   { label: 'London (UK)', tz: 'Europe/London' },
@@ -661,6 +684,392 @@ function setupNews() {
     loadNews(button.dataset.source || 'All');
   });
   loadNews('All');
+}
+
+function normalizeEventTimestamp(value) {
+  if (!value) return { iso: '', ms: 0 };
+  const tryParse = (input) => {
+    if (!input) return null;
+    const parsed = new Date(input);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+  let date = tryParse(value);
+  if (!date && typeof value === 'string') {
+    date = tryParse(`${value}T00:00:00Z`);
+  }
+  if (!date) return { iso: '', ms: 0 };
+  return { iso: date.toISOString(), ms: date.getTime() };
+}
+
+function formatEventDateTime(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return eventDateTimeFormatter.format(date);
+}
+
+function formatEventDateOnly(value) {
+  if (!value) return '';
+  const { iso } = normalizeEventTimestamp(value);
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return eventDateFormatter.format(date);
+}
+
+function mapNewsEvent(article) {
+  if (!article) return null;
+  const title = article.headline || article.title || article.summary || '';
+  const { iso, ms } = normalizeEventTimestamp(article.publishedAt || article.date);
+  const id = article.id || article.url || `${title || 'news'}-${ms}`;
+  return {
+    id,
+    type: 'news',
+    tag: EVENT_TYPE_LABELS.news,
+    title: title || 'News update',
+    summary: article.summary || '',
+    url: article.url || '',
+    timestamp: iso,
+    timeValue: ms,
+    source: article.source || '',
+  };
+}
+
+function mapDocumentEvent(document) {
+  if (!document) return null;
+  const title = document.headline || document.title || document.summary || document.documentType || 'Company filing';
+  const { iso, ms } = normalizeEventTimestamp(document.publishedAt || document.date);
+  const docType = typeof document.documentType === 'string' ? document.documentType.trim() : '';
+  const tag = docType || EVENT_TYPE_LABELS.filing;
+  const id = document.id || document.url || `${tag}-${ms}`;
+  return {
+    id,
+    type: 'filing',
+    tag,
+    title,
+    summary: document.summary || '',
+    url: document.url || '',
+    timestamp: iso,
+    timeValue: ms,
+    source: document.source || 'SEC Filing',
+    documentType: docType && docType !== tag ? docType : '',
+  };
+}
+
+function mapDividendEvent(dividend, symbol) {
+  if (!dividend) return null;
+  const { iso, ms } = normalizeEventTimestamp(dividend.exDate || dividend.payDate || dividend.recordDate);
+  const amount = Number(dividend.amount);
+  const hasAmount = Number.isFinite(amount);
+  const currency = dividend.currency || 'USD';
+  const amountLabel = hasAmount ? `${currency} ${fmt(amount)}` : '';
+  const title = amountLabel ? `Dividend ${amountLabel}` : 'Dividend announcement';
+  const detailsParts = [];
+  if (dividend.exDate) detailsParts.push(`Ex-date ${formatEventDateOnly(dividend.exDate)}`);
+  if (dividend.recordDate) detailsParts.push(`Record ${formatEventDateOnly(dividend.recordDate)}`);
+  if (dividend.payDate) detailsParts.push(`Payable ${formatEventDateOnly(dividend.payDate)}`);
+  const id = `dividend-${symbol || ''}-${dividend.exDate || iso || ms}-${hasAmount ? amount.toFixed(4) : 'na'}`;
+  return {
+    id,
+    type: 'dividend',
+    tag: EVENT_TYPE_LABELS.dividend,
+    title,
+    summary: '',
+    details: detailsParts.join(' · '),
+    url: '',
+    timestamp: iso,
+    timeValue: ms,
+    source: 'Corporate Action',
+    amount: hasAmount ? amount : null,
+    currency,
+  };
+}
+
+function mapSplitEvent(split, symbol) {
+  if (!split) return null;
+  const { iso, ms } = normalizeEventTimestamp(split.exDate || split.payDate);
+  const numerator = Number(split.numerator);
+  const denominator = Number(split.denominator);
+  let ratioLabel = '';
+  if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+    ratioLabel = `${numerator}-for-${denominator}`;
+  }
+  const title = ratioLabel ? `Stock split ${ratioLabel}` : 'Stock split announced';
+  const detailsParts = [];
+  if (split.exDate) detailsParts.push(`Ex-date ${formatEventDateOnly(split.exDate)}`);
+  if (split.payDate) detailsParts.push(`Payable ${formatEventDateOnly(split.payDate)}`);
+  const id = `split-${symbol || ''}-${split.exDate || iso || ms}-${ratioLabel || 'ratio'}`;
+  return {
+    id,
+    type: 'split',
+    tag: EVENT_TYPE_LABELS.split,
+    title,
+    summary: '',
+    details: detailsParts.join(' · '),
+    url: '',
+    timestamp: iso,
+    timeValue: ms,
+    source: 'Corporate Action',
+    ratio: ratioLabel,
+  };
+}
+
+function summariseEventStatus(sources = [], warnings = [], errors = [], count = 0) {
+  const normalizedSources = sources
+    .map((meta) => (meta && typeof meta.source === 'string' ? meta.source.toLowerCase() : ''))
+    .filter(Boolean);
+  const hasMock = normalizedSources.includes('mock');
+  const hasLive = normalizedSources.includes('live');
+  const hasFallback = normalizedSources.some((src) => src !== 'mock' && src !== 'live');
+  const cleanWarnings = [...new Set((warnings || []).filter(Boolean).map((msg) => String(msg)))];
+  const cleanErrors = [...new Set((errors || []).filter(Boolean).map((msg) => String(msg)))];
+  let text = 'Events: —';
+  if (hasMock) {
+    text = 'Events: Sample';
+  } else if (hasFallback) {
+    text = 'Events: Fallback';
+  } else if (hasLive) {
+    text = 'Events: Live';
+  } else if (cleanErrors.length) {
+    text = 'Events: Unavailable';
+  } else if (count) {
+    text = 'Events: Mixed';
+  }
+  const className = hasMock || hasFallback || cleanErrors.length ? 'chip chip-warning' : hasLive ? 'chip chip-live' : 'chip';
+  const titleParts = [...cleanWarnings, ...cleanErrors];
+  return {
+    text,
+    className,
+    title: titleParts.join(' • '),
+    warnings: cleanWarnings,
+    errors: cleanErrors,
+  };
+}
+
+function updateEventFeedBadge(status = {}) {
+  const badge = $('eventFeedBadge');
+  if (!badge) return;
+  scheduleEventFeedRender(() => {
+    badge.textContent = status.text || 'Events: —';
+    const nextClass = typeof status.className === 'string' && status.className.includes('chip')
+      ? status.className
+      : `chip${status.className ? ` ${status.className}` : ''}`;
+    badge.className = nextClass.trim() || 'chip';
+    if (status.title) {
+      badge.title = status.title;
+    } else {
+      badge.removeAttribute('title');
+    }
+  });
+}
+
+function renderEventFeed(container, items = [], status = {}) {
+  scheduleEventFeedRender(() => {
+    if (!container) return;
+    const fragment = document.createDocumentFragment();
+    const alerts = [...new Set([...(status.warnings || []), ...(status.errors || [])])].filter(Boolean);
+    if (alerts.length) {
+      const warningEl = document.createElement('div');
+      warningEl.className = 'event-feed-warning';
+      warningEl.textContent = alerts.join(' • ');
+      fragment.appendChild(warningEl);
+    }
+    const validItems = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!validItems.length) {
+      const empty = document.createElement('div');
+      empty.className = 'event-feed-empty';
+      empty.textContent = 'No events available for this symbol right now.';
+      fragment.appendChild(empty);
+      container.replaceChildren(fragment);
+      return;
+    }
+    validItems.forEach((event) => {
+      const item = document.createElement('article');
+      item.className = `event-item event-type-${event.type || 'event'}`;
+      item.setAttribute('role', 'article');
+      if (event.timestamp) {
+        item.dataset.timestamp = event.timestamp;
+      }
+
+      const header = document.createElement('div');
+      header.className = 'event-item-header';
+
+      const typeLabel = document.createElement('span');
+      typeLabel.className = 'event-item-type';
+      typeLabel.textContent = event.tag || EVENT_TYPE_LABELS[event.type] || 'Update';
+      header.appendChild(typeLabel);
+
+      const metaParts = [];
+      if (event.source && event.source.toLowerCase() !== typeLabel.textContent.toLowerCase()) {
+        metaParts.push(event.source);
+      }
+      if (event.documentType && event.documentType.toLowerCase() !== typeLabel.textContent.toLowerCase()) {
+        metaParts.push(event.documentType);
+      }
+      if (Number.isFinite(event.amount)) {
+        metaParts.push(`${event.currency || 'USD'} ${fmt(event.amount)}`);
+      }
+      if (event.ratio) {
+        metaParts.push(event.ratio);
+      }
+      if (event.timestamp) {
+        const absolute = formatEventDateTime(event.timestamp);
+        const relative = formatRelativeTime(event.timestamp);
+        if (absolute) {
+          metaParts.push(relative ? `${absolute} · ${relative}` : absolute);
+        }
+      }
+      if (metaParts.length) {
+        const meta = document.createElement('span');
+        meta.textContent = metaParts.join(' · ');
+        header.appendChild(meta);
+      }
+      item.appendChild(header);
+
+      const titleEl = document.createElement(event.url ? 'a' : 'div');
+      titleEl.className = 'event-item-title';
+      titleEl.textContent = event.title || 'Update';
+      if (event.url) {
+        titleEl.href = event.url;
+        titleEl.target = '_blank';
+        titleEl.rel = 'noopener';
+      }
+      item.appendChild(titleEl);
+
+      if (event.summary) {
+        const summaryEl = document.createElement('p');
+        summaryEl.className = 'event-item-summary';
+        summaryEl.textContent = event.summary;
+        item.appendChild(summaryEl);
+      }
+
+      if (event.details) {
+        const detailsEl = document.createElement('div');
+        detailsEl.className = 'event-item-details';
+        detailsEl.textContent = event.details;
+        item.appendChild(detailsEl);
+      }
+
+      fragment.appendChild(item);
+    });
+
+    container.replaceChildren(fragment);
+  });
+}
+
+async function loadEventFeed(symbol) {
+  const container = $('eventFeed');
+  if (!container) return;
+  const target = String(symbol || '').toUpperCase() || 'AAPL';
+  eventFeedSymbolInFlight = target;
+
+  const cacheKey = `events:${target}`;
+  const cached = eventFeedCache.get(cacheKey);
+  if (cached) {
+    if (eventFeedSymbolInFlight !== target) return;
+    renderEventFeed(container, cached.items, cached.status);
+    updateEventFeedBadge(cached.status);
+    return;
+  }
+
+  updateEventFeedBadge({ text: 'Events: Loading…', className: 'chip' });
+  scheduleEventFeedRender(() => {
+    container.innerHTML = '<div class="event-feed-empty">Loading events…</div>';
+  });
+
+  try {
+    const payload = await eventFeedCache.resolve(
+      cacheKey,
+      async () => {
+        const [newsRes, docsRes, actionsRes] = await Promise.all([
+          callTiingo({ symbol: target, kind: 'news', limit: 20 }, { silent: true }).catch((error) => ({ error })),
+          callTiingo({ symbol: target, kind: 'documents', limit: 12 }, { silent: true }).catch((error) => ({ error })),
+          callTiingo({ symbol: target, kind: 'actions' }, { silent: true }).catch((error) => ({ error })),
+        ]);
+
+        const sources = [];
+        const warnings = [];
+        const errors = [];
+        const events = [];
+
+        const pushEvent = (event) => {
+          if (event) events.push(event);
+        };
+
+        if (newsRes) {
+          if (newsRes.error) {
+            errors.push('News unavailable.');
+          } else {
+            if (newsRes.meta) sources.push(newsRes.meta);
+            if (newsRes.warning) warnings.push(newsRes.warning);
+            if (Array.isArray(newsRes.data)) {
+              newsRes.data.forEach((article) => pushEvent(mapNewsEvent(article)));
+            }
+          }
+        }
+
+        if (docsRes) {
+          if (docsRes.error) {
+            errors.push('Filings unavailable.');
+          } else {
+            if (docsRes.meta) sources.push(docsRes.meta);
+            if (docsRes.warning) warnings.push(docsRes.warning);
+            if (Array.isArray(docsRes.data)) {
+              docsRes.data.forEach((doc) => pushEvent(mapDocumentEvent(doc)));
+            }
+          }
+        }
+
+        if (actionsRes) {
+          if (actionsRes.error) {
+            errors.push('Corporate actions unavailable.');
+          } else {
+            if (actionsRes.meta) sources.push(actionsRes.meta);
+            if (actionsRes.warning) warnings.push(actionsRes.warning);
+            const dividends = Array.isArray(actionsRes.data?.dividends) ? actionsRes.data.dividends : [];
+            dividends.forEach((dividend) => pushEvent(mapDividendEvent(dividend, target)));
+            const splits = Array.isArray(actionsRes.data?.splits) ? actionsRes.data.splits : [];
+            splits.forEach((split) => pushEvent(mapSplitEvent(split, target)));
+          }
+        }
+
+        const deduped = [];
+        const seen = new Set();
+        events.forEach((event) => {
+          if (!event) return;
+          const key = `${event.type}:${event.id}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          deduped.push(event);
+        });
+
+        deduped.sort((a, b) => {
+          const diff = (b.timeValue || 0) - (a.timeValue || 0);
+          if (diff !== 0) return diff;
+          return (b.id || '').localeCompare(a.id || '');
+        });
+
+        const limited = deduped.slice(0, EVENT_FEED_LIMIT);
+        const status = summariseEventStatus(sources, warnings, errors, limited.length);
+        return { items: limited, status };
+      },
+      3 * 60 * 1000,
+    );
+
+    if (eventFeedSymbolInFlight !== target) return;
+    const data = payload || { items: [], status: {} };
+    renderEventFeed(container, data.items, data.status);
+    updateEventFeedBadge(data.status);
+  } catch (error) {
+    if (eventFeedSymbolInFlight !== target) return;
+    console.warn('Failed to load event feed', error);
+    eventFeedCache.delete(cacheKey);
+    const status = summariseEventStatus([], [], ['Events unavailable.'], 0);
+    updateEventFeedBadge(status);
+    scheduleEventFeedRender(() => {
+      container.innerHTML = '<div class="event-feed-empty">Events unavailable right now.</div>';
+    });
+  }
 }
 
 function getStoredProfile() {
@@ -1173,6 +1582,9 @@ async function loadSymbol(symbol, name, exchange) {
   } catch (err) {
     console.warn('Failed to load timeframe data', err);
   }
+  loadEventFeed(currentSymbol).catch((err) => {
+    console.warn('Failed to load event feed', err);
+  });
 }
 
 async function init() {
@@ -1210,6 +1622,11 @@ async function init() {
     await loadTimeframe(currentTimeframe, { force: true });
   } catch (err) {
     console.warn('Initial timeframe load failed', err);
+  }
+  try {
+    await loadEventFeed(currentSymbol);
+  } catch (err) {
+    console.warn('Initial event feed load failed', err);
   }
   try {
     await refreshWatchlistQuotes();
