@@ -149,6 +149,21 @@ body {
   margin-top: 1rem;
 }
 
+.batch-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.batch-controls .field {
+  margin-bottom: 0;
+}
+
+.batch-controls .action-row {
+  margin-top: 0;
+}
+
 .btn {
   border-radius: 12px;
   border: none;
@@ -613,6 +628,23 @@ body {
   z-index: 1;
 }
 
+.screener-table th[data-sort='asc']::after,
+.screener-table th[data-sort='desc']::after {
+  display: inline-block;
+  margin-left: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--primary);
+  opacity: 0.75;
+}
+
+.screener-table th[data-sort='asc']::after {
+  content: '▲';
+}
+
+.screener-table th[data-sort='desc']::after {
+  content: '▼';
+}
+
 .screener-table tbody tr:hover {
   background: rgba(74, 215, 168, 0.06);
 }
@@ -620,6 +652,13 @@ body {
 .screener-table td.summary-cell {
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.table-empty-cell {
+  text-align: center;
+  padding: 1.35rem 1rem;
+  color: var(--muted);
+  font-style: italic;
 }
 
 .legend {

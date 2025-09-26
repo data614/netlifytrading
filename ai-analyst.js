@@ -1,6 +1,7 @@
 import { computeValuationScores, VALUATION_RADAR_LABELS } from './utils/valuation-scorer.js';
 import { enrichError } from './utils/frontend-errors.js';
 import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
+import initBatchResultsModule from './ai-analyst-batch-table.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -737,6 +738,8 @@ function init() {
       setStatus('Report downloaded as Markdown snapshot.', 'success');
     });
   }
+
+  initBatchResultsModule();
 
   runAnalysis().catch((error) => {
     console.error('Initial analysis failed', error);
