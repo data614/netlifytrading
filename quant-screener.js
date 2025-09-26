@@ -2,6 +2,7 @@ import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
 import { createScreenPreferenceStore } from './utils/persistent-screen-preferences.js';
 import { computeRow, passesFilters, screenUniverse, suggestConcurrency } from './utils/quant-screener-core.js';
 import createAsyncCache from './utils/cache.js';
+import escapeHtml, { sanitizeAttribute, sanitizeText } from './utils/html-sanitizer.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -272,11 +273,23 @@ function renderHeatmap(rows) {
     const upsideLabel = fmtPercent(row.upside);
     const momentumLabel = fmtPercent(row.momentum);
     const rank = index + 1;
-    cell.title = `${row.symbol} · Upside ${upsideLabel} · Momentum ${momentumLabel} · Rank ${rank}`;
+    const symbolLabel = sanitizeText(row.symbol || '—') || '—';
+    const safeSymbol = escapeHtml(symbolLabel);
+    const safeUpsideLabel = escapeHtml(upsideLabel);
+    const safeMomentumLabel = escapeHtml(momentumLabel);
+    const title = [
+      symbolLabel,
+      `Upside ${sanitizeText(upsideLabel)}`,
+      `Momentum ${sanitizeText(momentumLabel)}`,
+      `Rank ${rank}`,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    cell.setAttribute('title', sanitizeAttribute(title, { maxLength: 160 }));
     cell.innerHTML = `
-      <span class="market-radar-symbol">${row.symbol}</span>
-      <span class="market-radar-metric">Upside ${upsideLabel}</span>
-      <span class="market-radar-details">Momentum ${momentumLabel}</span>
+      <span class="market-radar-symbol">${safeSymbol}</span>
+      <span class="market-radar-metric">Upside ${safeUpsideLabel}</span>
+      <span class="market-radar-details">Momentum ${safeMomentumLabel}</span>
     `;
     grid.appendChild(cell);
   });
@@ -306,15 +319,23 @@ function renderTable(rows) {
   visibleRows = Array.isArray(rows) ? [...rows] : [];
   rows.forEach((row) => {
     const tr = document.createElement('tr');
+    const safeSymbol = escapeHtml(row.symbol || '—');
+    const safeSector = escapeHtml(row.sector || '—');
+    const safeMarketCap = escapeHtml(fmtCompactCurrency(row.marketCap));
+    const safePrice = escapeHtml(fmtCurrency(row.price));
+    const safeFairValue = escapeHtml(fmtCurrency(row.fairValue));
+    const safeUpside = escapeHtml(fmtPercent(row.upside));
+    const safeMomentum = escapeHtml(fmtPercent(row.momentum));
+    const safeSummary = escapeHtml(row.summary || '—');
     tr.innerHTML = `
-      <td>${row.symbol}</td>
-      <td>${row.sector || '—'}</td>
-      <td>${fmtCompactCurrency(row.marketCap)}</td>
-      <td>${fmtCurrency(row.price)}</td>
-      <td>${fmtCurrency(row.fairValue)}</td>
-      <td>${fmtPercent(row.upside)}</td>
-      <td>${fmtPercent(row.momentum)}</td>
-      <td class="summary-cell">${row.summary || '—'}</td>
+      <td>${safeSymbol}</td>
+      <td>${safeSector}</td>
+      <td>${safeMarketCap}</td>
+      <td>${safePrice}</td>
+      <td>${safeFairValue}</td>
+      <td>${safeUpside}</td>
+      <td>${safeMomentum}</td>
+      <td class="summary-cell">${safeSummary}</td>
     `;
     tbody.appendChild(tr);
   });
