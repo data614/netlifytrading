@@ -18,10 +18,43 @@ const fmtDate = (iso) => {
   return date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+const isFiniteNumber = (value) =>
+  value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+
 let priceChart;
+let lastAnalysis = null;
+let runButtonDefaultHtml = '';
+
+function extractValuationMetrics(valuationData = {}) {
+  const valuation = valuationData?.valuation || valuationData;
+  const price = valuation?.price ?? valuationData?.price ?? valuationData?.quote?.price;
+  const fairValue = valuation?.fairValue ?? valuation?.valuation?.fairValue ?? null;
+  const upside = price && fairValue ? (fairValue - price) / price : null;
+  const entry = valuation?.suggestedEntry ?? valuation?.valuation?.suggestedEntry ?? valuationData?.suggestedEntry;
+  const breakdown = valuation?.valuation?.components || valuation?.components || {};
+  const fundamentals = valuationData?.fundamentals || valuation?.fundamentals || null;
+
+  return { price, fairValue, upside, entry, breakdown, fundamentals };
+}
+
+function resetValuationCard(message = 'Awaiting valuation inputs from Tiingo fundamentals.') {
+  $('#valuationPrice').textContent = '—';
+  $('#valuationFair').textContent = '—';
+  $('#valuationUpside').textContent = '—';
+  $('#valuationEntry').textContent = '—';
+  $('#valuationBreakdown').textContent = message;
+}
+
+function resetPriceChart(message = 'Awaiting price data.') {
+  $('#priceOverview').textContent = message;
+  if (priceChart) {
+    priceChart.destroy();
+    priceChart = null;
+  }
+}
 
 async function fetchIntel({ symbol, limit, timeframe }) {
-  const url = new URL('/api/aiAnalyst', window.location.origin);
+  const url = new URL('/.netlify/functions/ai-analyst', window.location.origin);
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('limit', limit);
   url.searchParams.set('timeframe', timeframe);
@@ -34,18 +67,13 @@ async function fetchIntel({ symbol, limit, timeframe }) {
 }
 
 function updateValuationCard(valuationData = {}) {
-  const valuation = valuationData?.valuation || valuationData;
-  const fairValue = valuation?.valuation?.fairValue ?? valuation?.fairValue;
-  const price = valuation?.price ?? valuation?.valuation?.price ?? valuation?.quote?.price;
-  const upside = valuation?.valuation?.upside ?? (price && fairValue ? (fairValue - price) / price : null);
-  const entry = valuation?.valuation?.suggestedEntry ?? valuation?.suggestedEntry;
+  const { price, fairValue, upside, entry, breakdown } = extractValuationMetrics(valuationData);
 
   $('#valuationPrice').textContent = fmtCurrency(price);
   $('#valuationFair').textContent = fmtCurrency(fairValue);
   $('#valuationUpside').textContent = Number.isFinite(upside) ? fmtPercent(upside * 100) : '—';
   $('#valuationEntry').textContent = fmtCurrency(entry);
 
-  const breakdown = valuation?.valuation?.components || valuation?.components || {};
   const items = [
     ['Discounted cash flow', breakdown.discountedCashFlow],
     ['Earnings power', breakdown.earningsPower],
@@ -70,7 +98,7 @@ function renderTimeline(timeline = []) {
     container.appendChild(clone);
   });
   if (!timeline.length) {
-    container.innerHTML = '<li class="timeline-item"><div>No events available.</div></li>';
+    container.innerHTML = '<li class="placeholder-item">No events available for the selected window.</li>';
   }
 }
 
@@ -86,7 +114,7 @@ function renderDocuments(documents = []) {
     container.appendChild(clone);
   });
   if (!documents.length) {
-    container.innerHTML = '<li class="document-item">No regulatory documents detected in the lookback window.</li>';
+    container.innerHTML = '<li class="placeholder-item">No regulatory documents detected in the lookback window.</li>';
   }
 }
 
@@ -114,20 +142,38 @@ function renderNews(news = []) {
     container.appendChild(clone);
   });
   if (!news.length) {
-    container.innerHTML = '<li class="news-item">No news flow captured for the chosen horizon.</li>';
+    container.innerHTML = '<li class="placeholder-item">No news flow captured for the chosen horizon.</li>';
   }
 }
 
 function renderChart(rows = []) {
   const ctx = $('#priceChart');
   if (!ctx) return;
-  const labels = rows.map((row) => new Date(row.date).toLocaleDateString());
-  const data = rows.map((row) => Number(row.close ?? row.price));
+  if (!Array.isArray(rows) || rows.length === 0) {
+    resetPriceChart('Price data unavailable from Tiingo.');
+    return;
+  }
+  const parsed = rows
+    .map((row) => ({
+      label: row?.date ? new Date(row.date).toLocaleDateString() : '',
+      value: Number(row?.close ?? row?.price ?? row?.last),
+    }))
+    .filter((point) => point.label && Number.isFinite(point.value));
+
+  if (!parsed.length) {
+    resetPriceChart('Price data unavailable from Tiingo.');
+    return;
+  }
+
+  const labels = parsed.map((point) => point.label);
+  const data = parsed.map((point) => point.value);
   const start = data[0];
   const end = data[data.length - 1];
-  if (Number.isFinite(start) && Number.isFinite(end)) {
+  if (Number.isFinite(start) && Number.isFinite(end) && Math.abs(start) > 1e-6) {
     const change = ((end - start) / start) * 100;
     $('#priceOverview').textContent = `${fmtCurrency(start)} → ${fmtCurrency(end)} (${fmtPercent(change)})`;
+  } else {
+    $('#priceOverview').textContent = 'Price trend unavailable.';
   }
 
   if (priceChart) priceChart.destroy();
@@ -167,6 +213,35 @@ function renderChart(rows = []) {
   });
 }
 
+function showPlaceholderList(selector, message, { element = 'li' } = {}) {
+  const container = $(selector);
+  if (!container) return;
+  container.innerHTML = `<${element} class="placeholder-item">${message}</${element}>`;
+}
+
+function renderNarrative(text, placeholder = 'AI narrative unavailable. Please retry.') {
+  const panel = $('#aiNarrativePanel');
+  if (!panel) return;
+  panel.innerHTML = '';
+  const content = typeof text === 'string' ? text.trim() : '';
+  if (!content) {
+    const fallback = document.createElement('p');
+    fallback.className = 'ai-summary placeholder';
+    fallback.textContent = placeholder;
+    panel.appendChild(fallback);
+    return;
+  }
+
+  const paragraphs = content.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const blocks = paragraphs.length ? paragraphs : [content];
+  blocks.forEach((block) => {
+    const paragraph = document.createElement('p');
+    paragraph.className = 'ai-summary';
+    paragraph.textContent = block.replace(/\s+/g, ' ').trim();
+    panel.appendChild(paragraph);
+  });
+}
+
 function setStatus(message, tone = 'info') {
   const el = $('#statusMessage');
   if (!el) return;
@@ -174,13 +249,191 @@ function setStatus(message, tone = 'info') {
   el.className = `status-message ${tone}`;
 }
 
-function downloadReport(symbol, data) {
-  const payload = JSON.stringify({ symbol, generatedAt: new Date().toISOString(), ...data }, null, 2);
-  const blob = new Blob([payload], { type: 'application/json' });
+function setLoadingState(isLoading) {
+  const runBtn = $('#runAnalysis');
+  if (runBtn) {
+    if (!runButtonDefaultHtml) {
+      runButtonDefaultHtml = runBtn.innerHTML;
+    }
+    runBtn.disabled = isLoading;
+    runBtn.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    runBtn.innerHTML = isLoading
+      ? '<span class="spinner" aria-hidden="true"></span><span>Running…</span>'
+      : runButtonDefaultHtml;
+  }
+
+  const exportBtn = $('#exportReport');
+  if (exportBtn) {
+    const disabled = isLoading || !lastAnalysis;
+    exportBtn.disabled = disabled;
+    exportBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+  }
+
+  const loadingStrip = $('#aiNarrativeLoading');
+  if (loadingStrip) {
+    loadingStrip.classList.toggle('active', isLoading);
+  }
+
+  const panel = $('#aiNarrativePanel');
+  if (panel) {
+    panel.classList.toggle('loading', isLoading);
+  }
+
+  if (document.body) {
+    document.body.classList.toggle('is-loading', isLoading);
+  }
+}
+
+function formatFundamentalSnapshot(fundamentals = {}) {
+  const metrics = fundamentals?.metrics || {};
+  const latest = fundamentals?.latest || {};
+  const lines = [];
+
+  const currencyLine = (label, value) => {
+    if (!isFiniteNumber(value)) return null;
+    return `- ${label}: ${fmtCurrency(value)}`;
+  };
+
+  const percentLine = (label, value) => {
+    if (!isFiniteNumber(value)) return null;
+    return `- ${label}: ${fmtPercent(Number(value) * 100)}`;
+  };
+
+  const metricFields = [
+    ['Revenue per share', metrics.revenuePerShare],
+    ['Earnings per share', metrics.earningsPerShare],
+    ['Free cash flow per share', metrics.freeCashFlowPerShare],
+    ['Book value per share', metrics.bookValuePerShare],
+  ];
+
+  metricFields.forEach(([label, value]) => {
+    const line = currencyLine(label, value);
+    if (line) lines.push(line);
+  });
+
+  const growthLines = [
+    percentLine('Revenue growth', metrics.revenueGrowth),
+    percentLine('EPS growth', metrics.epsGrowth),
+    percentLine('FCF growth', metrics.fcfGrowth),
+  ].filter(Boolean);
+  lines.push(...growthLines);
+
+  if (latest?.reportDate) {
+    lines.push(`- Latest report date: ${fmtDate(latest.reportDate)}`);
+  }
+
+  return lines.length ? lines : ['- Fundamental metrics unavailable from Tiingo.'];
+}
+
+function formatTimelineForReport(timeline = []) {
+  if (!Array.isArray(timeline) || !timeline.length) {
+    return ['- No major corporate events captured.'];
+  }
+  return timeline.slice(0, 5).map((event) => {
+    const date = fmtDate(event.publishedAt ?? event.date);
+    const title = event.headline || event.type || 'Event';
+    const summary = event.summary ? ` — ${event.summary}` : '';
+    return `- ${date}: ${title}${summary}`;
+  });
+}
+
+function formatNewsForReport(news = []) {
+  if (!Array.isArray(news) || !news.length) {
+    return ['- No notable news items recorded.'];
+  }
+  return news.slice(0, 5).map((item) => {
+    const date = fmtDate(item.publishedAt);
+    const source = item.source || 'Unknown source';
+    const sentiment = isFiniteNumber(item.sentiment)
+      ? fmtPercent(Number(item.sentiment) * 100)
+      : 'n/a';
+    const headline = item.headline || 'Headline unavailable';
+    return `- ${date} · ${source}: ${headline} (Sentiment ${sentiment})`;
+  });
+}
+
+function formatPriceForReport(rows = []) {
+  if (!Array.isArray(rows) || !rows.length) {
+    return 'Price history unavailable.';
+  }
+  const parsed = rows
+    .map((row) => ({
+      date: row?.date ? new Date(row.date) : null,
+      value: Number(row?.close ?? row?.price ?? row?.last),
+    }))
+    .filter((point) => point.date && isFiniteNumber(point.value))
+    .sort((a, b) => a.date - b.date);
+
+  if (!parsed.length) {
+    return 'Price history unavailable.';
+  }
+
+  const first = parsed[0];
+  const last = parsed[parsed.length - 1];
+  const change = Math.abs(first.value) > 1e-6 ? ((last.value - first.value) / first.value) * 100 : null;
+  const startDate = first.date.toISOString().slice(0, 10);
+  const endDate = last.date.toISOString().slice(0, 10);
+  const changeText = Number.isFinite(change) ? fmtPercent(change) : '—';
+  return `${fmtCurrency(first.value)} (${startDate}) → ${fmtCurrency(last.value)} (${endDate}) · Change ${changeText}`;
+}
+
+function buildReportContent(symbol, data, { limit, timeframe }) {
+  const timestamp = (() => {
+    const candidate = data?.generatedAt ? new Date(data.generatedAt) : new Date();
+    return Number.isNaN(candidate.getTime()) ? new Date().toLocaleString() : candidate.toLocaleString();
+  })();
+
+  const { price, fairValue, upside, entry, fundamentals } = extractValuationMetrics(data?.valuation || {});
+  const valuationLines = [
+    `- Last price: ${fmtCurrency(price)}`,
+    `- Fair value: ${fmtCurrency(fairValue)}`,
+    `- Upside: ${Number.isFinite(upside) ? fmtPercent(upside * 100) : '—'}`,
+    `- Suggested entry: ${fmtCurrency(entry)}`,
+  ];
+
+  const fundamentalsLines = formatFundamentalSnapshot(fundamentals);
+  const timelineLines = formatTimelineForReport(data?.timeline);
+  const newsLines = formatNewsForReport(data?.news);
+  const priceLine = formatPriceForReport(data?.trend);
+  const narrative = (data?.aiSummary || '').trim() || 'AI narrative unavailable.';
+
+  return [
+    `# AI Analyst Desk Report: ${symbol}`,
+    '',
+    `Generated: ${timestamp}`,
+    `Lookback: ${limit} candles · Horizon ${timeframe}`,
+    '',
+    '## Narrative',
+    narrative,
+    '',
+    '## Valuation Snapshot',
+    ...valuationLines,
+    '',
+    '## Price Action',
+    `- ${priceLine}`,
+    '',
+    '## Key Fundamentals',
+    ...fundamentalsLines,
+    '',
+    '## Recent Corporate Events',
+    ...timelineLines,
+    '',
+    '## News Highlights',
+    ...newsLines,
+    '',
+    '---',
+    '_Generated by the AI Analyst Desk using Tiingo market intelligence._',
+    '',
+  ].join('\n');
+}
+
+function downloadReport(symbol, data, context) {
+  const content = buildReportContent(symbol, data, context);
+  const blob = new Blob([content], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${symbol}-ai-analyst.json`;
+  link.download = `${symbol}-ai-analyst-report.md`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -191,40 +444,85 @@ async function runAnalysis() {
   const symbol = ($('#tickerInput').value || 'AAPL').trim().toUpperCase();
   const limit = Number($('#lookbackInput').value) || 120;
   const timeframe = $('#timeframeSelect').value || '3M';
+
+  lastAnalysis = null;
+  setLoadingState(true);
   setStatus('Running ChatGPT‑5 analysis…', 'info');
-  $('#aiNarrative').textContent = 'Processing latest Tiingo data…';
+  renderNarrative('', 'Processing latest Tiingo data…');
+  resetValuationCard('Crunching valuation components…');
+  showPlaceholderList('#timeline', 'Assembling event timeline…');
+  showPlaceholderList('#documents', 'Retrieving regulatory documents…');
+  showPlaceholderList('#newsList', 'Streaming latest news and sentiment…');
+  resetPriceChart('Loading price data…');
+  $('#intelTimestamp').textContent = '';
+
   try {
     const { data, warning } = await fetchIntel({ symbol, limit, timeframe });
     if (!data) throw new Error('No intelligence returned');
+
     updateValuationCard(data.valuation);
     renderTimeline(data.timeline);
     renderDocuments(data.documents);
     renderNews(data.news);
     renderChart(data.trend || []);
-    $('#aiNarrative').textContent = data.aiSummary || 'AI summary unavailable.';
+    renderNarrative(data.aiSummary);
     $('#intelTimestamp').textContent = data.generatedAt ? `Generated ${fmtDate(data.generatedAt)}` : '';
-    setStatus(warning ? `Completed with notice: ${warning}` : 'Analysis completed successfully.');
-    $('#exportReport').onclick = () => downloadReport(symbol, data);
+
+    const message = warning ? `Completed with notice: ${warning}` : 'Analysis completed successfully.';
+    const tone = warning ? 'info' : 'success';
+    setStatus(message, tone);
+
+    lastAnalysis = { symbol, limit, timeframe, data };
   } catch (error) {
     console.error(error);
     setStatus(`Analysis failed: ${error.message}`, 'error');
-    $('#aiNarrative').textContent = 'Unable to produce AI narrative. Please retry.';
+    resetValuationCard();
+    renderTimeline([]);
+    renderDocuments([]);
+    renderNews([]);
+    resetPriceChart('Price history unavailable.');
+    renderNarrative('', 'Unable to produce AI narrative. Please retry.');
+  } finally {
+    setLoadingState(false);
   }
 }
 
 function init() {
-  $('#runAnalysis').addEventListener('click', () => {
-    runAnalysis();
-  });
-
-  $('#tickerInput').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
+  const runBtn = $('#runAnalysis');
+  if (runBtn) {
+    runBtn.addEventListener('click', () => {
       runAnalysis();
-    }
-  });
+    });
+  }
+
+  const tickerInput = $('#tickerInput');
+  if (tickerInput) {
+    tickerInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        runAnalysis();
+      }
+    });
+  }
+
+  const exportBtn = $('#exportReport');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      if (!lastAnalysis) {
+        setStatus('Run an analysis before downloading the report.', 'error');
+        return;
+      }
+      downloadReport(lastAnalysis.symbol, lastAnalysis.data, {
+        limit: lastAnalysis.limit,
+        timeframe: lastAnalysis.timeframe,
+      });
+      setStatus('Report downloaded as Markdown snapshot.', 'success');
+    });
+  }
 
   runAnalysis().catch((error) => {
     console.error('Initial analysis failed', error);
+    setStatus('Initial analysis failed. Please retry.', 'error');
   });
 }
 

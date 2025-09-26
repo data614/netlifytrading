@@ -45,9 +45,9 @@
         </div>
         <div class="action-row">
           <button id="runAnalysis" class="btn primary"><i class="fa-solid fa-play"></i> Run AI review</button>
-          <button id="exportReport" class="btn ghost"><i class="fa-solid fa-file-export"></i> Export snapshot</button>
+          <button id="exportReport" class="btn ghost"><i class="fa-solid fa-file-arrow-down"></i> Download report</button>
         </div>
-        <div id="statusMessage" class="status-message"></div>
+        <div id="statusMessage" class="status-message" role="status" aria-live="polite"></div>
       </div>
 
       <div class="card">
@@ -80,7 +80,13 @@
           <h2>ChatGPT‑5 Analyst Summary</h2>
           <span id="intelTimestamp" class="muted small"></span>
         </div>
-        <p id="aiNarrative" class="ai-summary">Run an analysis to generate the AI narrative.</p>
+        <div id="aiNarrativeLoading" class="loading-strip" role="status" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Generating analyst narrative…</span>
+        </div>
+        <article id="aiNarrativePanel" class="ai-narrative-panel" aria-live="polite">
+          <p class="ai-summary placeholder">Run an analysis to generate the AI narrative.</p>
+        </article>
       </div>
 
       <div class="card large">
