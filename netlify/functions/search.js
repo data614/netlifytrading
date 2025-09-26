@@ -1,6 +1,7 @@
 import { searchLocalSymbols } from './lib/localSymbolSearch.js';
 import { getTiingoToken } from './lib/env.js';
 import { createCache } from './lib/cache.js';
+import { logError } from './lib/security.js';
 
 const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 const DEFAULT_LIMIT = 25;
@@ -44,8 +45,9 @@ export default async (request) => {
     return Response.json({ data: combined }, { headers: corsHeaders });
   } catch (e) {
     const fallback = localMatches.length ? localMatches : [];
+    const detail = logError('tiingo search failed', e, { maxLength: 200 });
     return Response.json(
-      { data: fallback, warning: 'tiingo search failed', detail: String(e) },
+      { data: fallback, warning: 'tiingo search failed', detail },
       { status: 200, headers: corsHeaders }
     );
   }

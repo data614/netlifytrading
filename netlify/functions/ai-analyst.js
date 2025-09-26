@@ -1,5 +1,6 @@
 import handleTiingoRequest from './tiingo.js';
 import { createCache } from './lib/cache.js';
+import { logError } from './lib/security.js';
 import { summarizeValuationNarrative } from './lib/valuation.js';
 import { getGeminiKeyDetail, getGeminiModel, generateGeminiContent } from './lib/gemini.js';
 import { getCodexKeyDetail, getCodexModel, generateCodexContent } from './lib/codex.js';
@@ -587,7 +588,7 @@ export async function handleRequest(request) {
 
     return ok(responseBody, warningHeader, cacheHeaders);
   } catch (error) {
-    console.error('AI analyst orchestrator failed:', error);
+    logError('AI analyst orchestrator failed:', error);
     return Response.json({ error: 'AI analyst orchestrator failed.' }, { status: 500, headers: corsHeaders });
   }
 }

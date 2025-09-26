@@ -1,4 +1,5 @@
 import { createCache } from './lib/cache.js';
+import { logError } from './lib/security.js';
 
 const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 
@@ -166,16 +167,16 @@ export default async (request) => {
 
     return buildResponse(source, articles, { fetchedAt: payload.fetchedAt || new Date().toISOString() });
   } catch (error) {
-    console.error('news function error', error);
+    const detail = logError('news function error', error, { maxLength: 400 });
     const cachedFallback = newsCache.get(cacheKey);
     if (cachedFallback) {
       return buildResponse(source, cachedFallback.articles, {
         fromCache: true,
         fetchedAt: cachedFallback.fetchedAt,
         error: 'news fetch failed',
-        detail: String(error),
+        detail,
       });
     }
-    return fallbackResponse(source, { error: 'news fetch failed', detail: String(error) });
+    return fallbackResponse(source, { error: 'news fetch failed', detail });
   }
 };
