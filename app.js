@@ -1,3 +1,4 @@
+import { createRenderQueue, createRequestCache } from './utils/browser-cache.js';
 import { enrichError, getFriendlyErrorMessage } from './utils/frontend-errors.js';
 
 // Minimal frontend logic to fetch from Netlify functions and render the UI
@@ -32,45 +33,89 @@ const fmtPct = (n) => {
 
 /* API wrapper */
 const API = '/api';
+const tiingoRequestCache = createRequestCache({ ttl: 30000, maxEntries: 80 });
+const searchResultCache = createRequestCache({ ttl: 120000, maxEntries: 120 });
+const newsRequestCache = createRequestCache({ ttl: 5 * 60 * 1000, maxEntries: 12 });
+
+const scheduleWatchlistRender = createRenderQueue();
+const scheduleMoversRender = createRenderQueue();
+const scheduleNewsRender = createRenderQueue();
+const scheduleSearchRender = createRenderQueue();
+
+function defaultTiingoCacheTtl(params = {}) {
+  const kind = String(params?.kind || '').toLowerCase();
+  if (kind === 'intraday_latest') return 10_000;
+  if (kind === 'intraday') return 20_000;
+  if (kind === 'eod') return 600_000;
+  if (kind === 'valuation') return 15 * 60_000;
+  return 60_000;
+}
+
 async function callTiingo(params, options = {}) {
-  const { silent = false } = options || {};
+  const { silent = false, forceRefresh = false, cacheTtl } = options || {};
   const url = new URL(`${API}/tiingo`, window.location.origin);
   Object.entries(params || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
   });
-  if (!silent) showLoading(true);
-  try {
-    const resp = await fetch(url, { headers: { accept: 'application/json' } });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      const error = new Error(data?.warning || data?.error || resp.statusText || 'Tiingo request failed.');
-      error.status = resp.status;
-      error.response = data;
-      throw error;
-    }
-    if (data?.warning) console.warn('tiingo warning:', data.warning);
-    const responseMeta = data?.meta && typeof data.meta === 'object' ? { ...data.meta } : {};
-    const meta = {
-      ...responseMeta,
-      source: resp.headers.get('x-tiingo-source') || responseMeta.source || '',
-      fallback: resp.headers.get('x-tiingo-fallback') || responseMeta.fallback || '',
-      tokenPreview: resp.headers.get('x-tiingo-token-preview') || '',
-      chosenKey: resp.headers.get('x-tiingo-chosen-key') || '',
-      kind: params?.kind || responseMeta.kind || '',
-    };
-    const payload = {
-      body: data,
-      data: data?.data,
-      symbol: data?.symbol || params?.symbol || '',
-      warning: data?.warning || '',
-      meta,
-    };
-    if (!silent) {
-      if (meta?.reason === 'exception') {
+  const key = url.toString();
+  if (!forceRefresh) {
+    const cached = tiingoRequestCache.get(key);
+    if (cached) {
+      if (!silent) showLoading(false);
+      // Mirror "main" branch behavior: surface friendly warnings on cached hits too
+      if (!silent && cached?.meta?.reason === 'exception') {
         const friendlyWarning = getFriendlyErrorMessage({
           context: 'tiingo',
-          message: data?.warning || meta?.message || '',
-          detail: meta?.message || '',
+          message: cached?.warning || cached?.meta?.message || '',
+          detail: cached?.meta?.message || '',
+          fallback: 'Live market data is temporarily unavailable. Displaying sample data.',
+        });
+        showError(friendlyWarning);
+      } else if (!silent) {
+        showError('');
+      }
+      return cached;
+    }
+  }
+  if (!silent) showLoading(true);
+  const ttl = cacheTtl ?? defaultTiingoCacheTtl(params);
+  try {
+    const loader = async () => {
+      const resp = await fetch(url, { headers: { accept: 'application/json' } });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const error = new Error(data?.warning || data?.error || resp.statusText || 'Tiingo request failed.');
+        error.status = resp.status;
+        error.response = data;
+        throw error;
+      }
+      if (data?.warning) console.warn('tiingo warning:', data.warning);
+      const responseMeta = data?.meta && typeof data.meta === 'object' ? { ...data.meta } : {};
+      const meta = {
+        ...responseMeta,
+        source: resp.headers.get('x-tiingo-source') || responseMeta.source || '',
+        fallback: resp.headers.get('x-tiingo-fallback') || responseMeta.fallback || '',
+        tokenPreview: resp.headers.get('x-tiingo-token-preview') || '',
+        chosenKey: resp.headers.get('x-tiingo-chosen-key') || '',
+        kind: params?.kind || responseMeta.kind || '',
+      };
+      return {
+        body: data,
+        data: data?.data,
+        symbol: data?.symbol || params?.symbol || '',
+        warning: data?.warning || '',
+        meta,
+      };
+    };
+
+    const payload = await tiingoRequestCache.resolve(key, loader, ttl);
+
+    if (!silent) {
+      if (payload?.meta?.reason === 'exception') {
+        const friendlyWarning = getFriendlyErrorMessage({
+          context: 'tiingo',
+          message: payload?.warning || payload?.meta?.message || '',
+          detail: payload?.meta?.message || '',
           fallback: 'Live market data is temporarily unavailable. Displaying sample data.',
         });
         showError(friendlyWarning);
@@ -78,6 +123,7 @@ async function callTiingo(params, options = {}) {
         showError('');
       }
     }
+
     return payload;
   } catch (err) {
     const enhanced = enrichError(err, {
@@ -89,6 +135,8 @@ async function callTiingo(params, options = {}) {
     } else {
       console.warn('Tiingo request failed', enhanced);
     }
+    // ensure bad entries aren’t retained
+    tiingoRequestCache.delete(key);
     throw enhanced;
   } finally {
     if (!silent) showLoading(false);
@@ -108,6 +156,7 @@ let searchDebounceTimer = null;
 let searchInputEl = null;
 let searchResultsEl = null;
 let exchangeFilterEl = null;
+let newsAbortController = null;
 const watchlistQuotes = new Map();
 let watchlistRefreshTimer = null;
 
@@ -178,15 +227,16 @@ function persistWatchlist() {
   localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(serialisable));
 }
 
-function renderWatchlist() {
+function renderWatchlistNow() {
   const container = $('watchlist');
   if (!container) return;
-  container.innerHTML = '';
+  const fragment = document.createDocumentFragment();
   if (!watchlist.length) {
     const empty = document.createElement('div');
     empty.className = 'muted watchlist-empty';
     empty.textContent = 'No symbols yet. Search above to add.';
-    container.appendChild(empty);
+    fragment.appendChild(empty);
+    container.replaceChildren(fragment);
     return;
   }
 
@@ -221,8 +271,14 @@ function renderWatchlist() {
         <button type="button" class="watchlist-remove" data-action="remove" data-key="${key}" aria-label="Remove ${item.symbol}">&times;</button>
       </div>
     `;
-    container.appendChild(row);
+    fragment.appendChild(row);
   });
+
+  container.replaceChildren(fragment);
+}
+
+function renderWatchlist() {
+  scheduleWatchlistRender(renderWatchlistNow);
 }
 
 function addToWatchlist(item) {
@@ -269,13 +325,17 @@ function handleWatchlistClick(event) {
 
 function clearSearchResults(message = SEARCH_PLACEHOLDER) {
   if (!searchResultsEl) return;
-  searchResultsEl.innerHTML = '';
-  if (message) {
+  scheduleSearchRender(() => {
+    if (!searchResultsEl) return;
+    if (!message) {
+      searchResultsEl.innerHTML = '';
+      return;
+    }
     const note = document.createElement('div');
     note.className = 'search-empty muted';
     note.textContent = message;
-    searchResultsEl.appendChild(note);
-  }
+    searchResultsEl.replaceChildren(note);
+  });
 }
 
 function updateApiBadge(meta = {}) {
@@ -362,12 +422,12 @@ function setWatchlistQuote(item, row, meta = {}) {
   watchlistQuotes.set(key, { ...stats, symbol: item.symbol, name: item.name || '', source: meta.source || '' });
 }
 
-function renderMarketMovers() {
+function renderMarketMoversNow() {
   const table = $('marketMoversTable');
   if (!table) return;
   const body = table.querySelector('tbody');
   if (!body) return;
-  body.innerHTML = '';
+  const fragment = document.createDocumentFragment();
   const entries = (watchlist.length ? watchlist : DEFAULT_WATCHLIST)
     .map((item) => {
       const key = getWatchlistKey(item);
@@ -384,7 +444,8 @@ function renderMarketMovers() {
     cell.className = 'muted';
     cell.textContent = 'Price data unavailable. Add symbols or wait for refresh.';
     row.appendChild(cell);
-    body.appendChild(row);
+    fragment.appendChild(row);
+    body.replaceChildren(fragment);
     return;
   }
 
@@ -397,8 +458,14 @@ function renderMarketMovers() {
       <td>${fmt(entry.price)}</td>
       <td class="${changeClass}">${fmtPct(entry.changePct)}</td>
     `;
-    body.appendChild(tr);
+    fragment.appendChild(tr);
   });
+
+  body.replaceChildren(fragment);
+}
+
+function renderMarketMovers() {
+  scheduleMoversRender(renderMarketMoversNow);
 }
 
 async function refreshWatchlistQuotes() {
@@ -409,7 +476,7 @@ async function refreshWatchlistQuotes() {
     return;
   }
   const results = await Promise.all(entries.map((item) =>
-    callTiingo({ symbol: item.symbol, kind: 'intraday_latest' }, { silent: true })
+    callTiingo({ symbol: item.symbol, kind: 'intraday_latest' }, { silent: true, cacheTtl: 15_000 })
       .then((res) => ({ item, res }))
       .catch((err) => {
         console.warn('Quote refresh failed', item.symbol, err);
@@ -449,42 +516,48 @@ function startWatchlistAutoRefresh() {
 function startClock() {
   const container = $('digitalClockContainer');
   if (!container) return;
+  container.innerHTML = '';
   const grid = document.createElement('div');
   grid.className = 'digital-clock-grid';
-  container.innerHTML = '';
   container.appendChild(grid);
 
-  const render = () => {
-    grid.innerHTML = '';
+  const items = CLOCK_ZONES.map(({ label, tz }) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'clock-item';
+    const zone = document.createElement('div');
+    zone.className = 'clock-zone-name';
+    zone.textContent = label;
+    const timeEl = document.createElement('div');
+    timeEl.className = 'clock-time';
+    const dateEl = document.createElement('div');
+    dateEl.className = 'clock-date';
+    wrapper.append(zone, timeEl, dateEl);
+    grid.appendChild(wrapper);
+    return { timeEl, dateEl, tz };
+  });
+
+  const renderTick = () => {
     const now = Date.now();
-    CLOCK_ZONES.forEach(({ label, tz }) => {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'clock-item';
+    items.forEach(({ timeEl, dateEl, tz }) => {
       const date = new Date(now);
-      const timeText = date.toLocaleTimeString([], {
+      timeEl.textContent = date.toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
         hour12: false,
         timeZone: tz,
       });
-      const dateText = date.toLocaleDateString([], {
+      dateEl.textContent = date.toLocaleDateString([], {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
         timeZone: tz,
       });
-      wrapper.innerHTML = `
-        <div class="clock-zone-name">${label}</div>
-        <div class="clock-time">${timeText}</div>
-        <div class="clock-date">${dateText}</div>
-      `;
-      grid.appendChild(wrapper);
     });
   };
 
-  render();
-  setInterval(render, 1000);
+  renderTick();
+  setInterval(renderTick, 1000);
 }
 
 function formatRelativeTime(iso) {
@@ -500,24 +573,14 @@ function formatRelativeTime(iso) {
   return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
 }
 
-async function loadNews(source = 'All') {
-  const feed = $('news-feed');
-  if (!feed) return;
-  feed.innerHTML = '<div class="muted">Loading news…</div>';
-  try {
-    const resp = await fetch(`${API}/news?source=${encodeURIComponent(source)}`, {
-      headers: { accept: 'application/json' },
-    });
-    const payload = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      throw new Error(payload?.error || resp.statusText);
-    }
-    const articles = Array.isArray(payload?.articles) ? payload.articles : [];
-    if (!articles.length) {
-      feed.innerHTML = '<div class="muted">No articles available right now.</div>';
+function renderNewsArticles(container, articles, source) {
+  scheduleNewsRender(() => {
+    if (!container) return;
+    if (!Array.isArray(articles) || !articles.length) {
+      container.innerHTML = '<div class="muted">No articles available right now.</div>';
       return;
     }
-    feed.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     articles.forEach((article) => {
       const item = document.createElement('div');
       item.className = 'news-item';
@@ -528,10 +591,55 @@ async function loadNews(source = 'All') {
         <a href="${article.url}" target="_blank" rel="noopener">${article.title}</a>
         <small>${metaParts.join(' · ')}</small>
       `;
-      feed.appendChild(item);
+      fragment.appendChild(item);
     });
+    container.replaceChildren(fragment);
+  });
+}
+
+async function loadNews(source = 'All') {
+  const feed = $('news-feed');
+  if (!feed) return;
+  const cacheKey = `news:${source}`;
+  const cached = newsRequestCache.get(cacheKey);
+  if (cached && Array.isArray(cached.articles)) {
+    renderNewsArticles(feed, cached.articles, source);
+    return;
+  }
+
+  if (newsAbortController) {
+    newsAbortController.abort();
+  }
+  newsRequestCache.delete(cacheKey);
+  const controller = new AbortController();
+  newsAbortController = controller;
+  feed.innerHTML = '<div class="muted">Loading news…</div>';
+
+  try {
+    const payload = await newsRequestCache.resolve(cacheKey, async () => {
+      const resp = await fetch(`${API}/news?source=${encodeURIComponent(source)}`, {
+        headers: { accept: 'application/json' },
+        signal: controller.signal,
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(body?.error || resp.statusText);
+      }
+      const articles = Array.isArray(body?.articles) ? body.articles : [];
+      return { articles };
+    }, 3 * 60 * 1000);
+    if (controller.signal.aborted) return;
+    renderNewsArticles(feed, payload.articles || [], source);
   } catch (err) {
-    feed.innerHTML = `<div class="muted">News unavailable. ${err.message || err}</div>`;
+    if (controller.signal.aborted) return;
+    scheduleNewsRender(() => {
+      feed.innerHTML = `<div class="muted">News unavailable. ${err.message || err}</div>`;
+    });
+    newsRequestCache.delete(cacheKey);
+  } finally {
+    if (newsAbortController === controller) {
+      newsAbortController = null;
+    }
   }
 }
 
@@ -655,43 +763,50 @@ function setupProfile() {
 
 function setSearchLoading() {
   if (!searchResultsEl) return;
-  searchResultsEl.innerHTML = '<div class="search-loading">Searching…</div>';
+  scheduleSearchRender(() => {
+    if (!searchResultsEl) return;
+    searchResultsEl.innerHTML = '<div class="search-loading">Searching…</div>';
+  });
 }
 
 function renderSearchResults(items) {
   if (!searchResultsEl) return;
-  searchResultsEl.innerHTML = '';
-  if (!items.length) {
+  if (!Array.isArray(items) || !items.length) {
     clearSearchResults('No matching instruments.');
     return;
   }
 
-  items.forEach((item) => {
-    const symbol = (item.symbol || '').toUpperCase();
-    if (!symbol) return;
-    const name = item.name || '';
-    const mic = (item.mic || item.exchange || '').toUpperCase();
-    const type = item.type || '';
-    const country = item.country || '';
-    const meta = [mic, type, country].filter(Boolean).join(' • ');
+  scheduleSearchRender(() => {
+    if (!searchResultsEl) return;
+    const fragment = document.createDocumentFragment();
+    items.forEach((item) => {
+      const symbol = (item.symbol || '').toUpperCase();
+      if (!symbol) return;
+      const name = item.name || '';
+      const mic = (item.mic || item.exchange || '').toUpperCase();
+      const type = item.type || '';
+      const country = item.country || '';
+      const meta = [mic, type, country].filter(Boolean).join(' • ');
 
-    const row = document.createElement('div');
-    row.className = 'search-result-item';
-    row.innerHTML = `
-      <div class="search-result-main">
-        <div class="search-result-icon">${symbol.charAt(0)}</div>
-        <div class="search-result-text">
-          <div class="search-result-symbol">${symbol}</div>
-          <div class="search-result-name">${name}</div>
-          <div class="search-result-meta">${meta}</div>
+      const row = document.createElement('div');
+      row.className = 'search-result-item';
+      row.innerHTML = `
+        <div class="search-result-main">
+          <div class="search-result-icon">${symbol.charAt(0)}</div>
+          <div class="search-result-text">
+            <div class="search-result-symbol">${symbol}</div>
+            <div class="search-result-name">${name}</div>
+            <div class="search-result-meta">${meta}</div>
+          </div>
         </div>
-      </div>
-      <div class="search-result-actions">
-        <button type="button" class="search-result-btn watch" data-action="watch" data-symbol="${symbol}" data-name="${name}" data-mic="${mic}" data-exchange="${item.exchange || ''}">Add</button>
-        <button type="button" class="search-result-btn load" data-action="load" data-symbol="${symbol}" data-name="${name}" data-mic="${mic}" data-exchange="${item.exchange || ''}">Load</button>
-      </div>
-    `;
-    searchResultsEl.appendChild(row);
+        <div class="search-result-actions">
+          <button type="button" class="search-result-btn watch" data-action="watch" data-symbol="${symbol}" data-name="${name}" data-mic="${mic}" data-exchange="${item.exchange || ''}">Add</button>
+          <button type="button" class="search-result-btn load" data-action="load" data-symbol="${symbol}" data-name="${name}" data-mic="${mic}" data-exchange="${item.exchange || ''}">Load</button>
+        </div>
+      `;
+      fragment.appendChild(row);
+    });
+    searchResultsEl.replaceChildren(fragment);
   });
 }
 
@@ -699,6 +814,13 @@ async function performSearch(query) {
   const q = query.trim();
   if (q.length < 2) {
     clearSearchResults('Keep typing to search…');
+    return;
+  }
+
+  const key = `${(selectedExchange || 'ALL').toUpperCase()}::${q.toUpperCase()}`;
+  const cached = searchResultCache.get(key);
+  if (cached) {
+    renderSearchResults(cached);
     return;
   }
 
@@ -710,23 +832,32 @@ async function performSearch(query) {
   setSearchLoading();
 
   try {
-    const endpoint = new URL(`${API}/search`, window.location.origin);
-    endpoint.searchParams.set('q', q);
-    endpoint.searchParams.set('limit', '12');
-    if (selectedExchange) {
-      endpoint.searchParams.set('exchange', selectedExchange);
-    }
-    const response = await fetch(endpoint, { signal: controller.signal, headers: { accept: 'application/json' } });
-    if (!response.ok) {
-      throw new Error(`Search failed with status ${response.status}`);
-    }
-    const payload = await response.json().catch(() => ({}));
-    const items = Array.isArray(payload?.data) ? payload.data : [];
-    renderSearchResults(items.slice(0, 12));
+    const items = await searchResultCache.resolve(key, async () => {
+      const endpoint = new URL(`${API}/search`, window.location.origin);
+      endpoint.searchParams.set('q', q);
+      endpoint.searchParams.set('limit', '12');
+      if (selectedExchange) {
+        endpoint.searchParams.set('exchange', selectedExchange);
+      }
+      const response = await fetch(endpoint, { signal: controller.signal, headers: { accept: 'application/json' } });
+      if (!response.ok) {
+        throw new Error(`Search failed with status ${response.status}`);
+      }
+      const payload = await response.json().catch(() => ({}));
+      const items = Array.isArray(payload?.data) ? payload.data.slice(0, 12) : [];
+      return items;
+    }, 2 * 60 * 1000);
+    if (controller.signal.aborted) return;
+    renderSearchResults(items);
   } catch (err) {
     if (controller.signal.aborted) return;
     console.error('Search request failed', err);
+    searchResultCache.delete(key);
     clearSearchResults('Search unavailable. Try again later.');
+  } finally {
+    if (searchAbortController === controller) {
+      searchAbortController = null;
+    }
   }
 }
 
@@ -847,6 +978,7 @@ function renderChart(rows, intraday) {
     priceChart.destroy();
     priceChart = null;
   }
+  // eslint-disable-next-line no-undef
   priceChart = new Chart(ctx, {
     type: 'line',
     data: {

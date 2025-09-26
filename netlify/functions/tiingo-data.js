@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { getTiingoToken, TIINGO_TOKEN_ENV_KEYS } from './lib/env.js';
+import { createCache } from './lib/cache.js';
 import buildValuationSnapshot, { summarizeValuationNarrative, valuationUtils } from './lib/valuation.js';
 
 // --- Configuration & Constants ---
@@ -25,6 +26,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const MOCK_DATA_DIR = join(__dirname, '../..', 'data', 'tiingo-mock');
 const FALLBACK_SYMBOL = 'GENERIC';
 const mockCache = new Map();
+const tiingoResponseCache = createCache({ ttl: 60_000, maxEntries: 400 });
 
 // --- Mock Data Generators ---
 
@@ -292,14 +294,26 @@ const pickMockSection = (record, key) => {
 
 // --- API Helpers ---
 
+const normaliseParams = (params = {}) => Object.entries(params)
+  .filter(([, value]) => value !== undefined && value !== null && value !== '')
+  .sort(([a], [b]) => (a > b ? 1 : a < b ? -1 : 0))
+  .map(([key, value]) => `${key}=${value}`)
+  .join('&');
+
+const buildTiingoCacheKey = (path, params, token) => `${path}::${normaliseParams(params)}::${token || 'no-token'}`;
+
 /**
  * A wrapper for making authenticated requests to the Tiingo API.
  * @param {string} path - The API endpoint path (e.g., '/tiingo/daily/aapl/prices').
  * @param {object} params - URL query parameters.
  * @param {string} token - The Tiingo API token.
+ * @param {object} [options]
+ * @param {number} [options.cacheTtl] Custom TTL for the cache entry in milliseconds.
+ * @param {boolean} [options.forceRefresh] When true, bypasses the cache.
  * @returns {Promise<object|any[]>} The JSON response from the API.
  */
-async function tiingo(path, params, token) {
+async function tiingo(path, params, token, options = {}) {
+  const { cacheTtl, forceRefresh } = options || {};
   const url = new URL(path, API_BASE);
   url.searchParams.set('token', token);
 
@@ -309,24 +323,38 @@ async function tiingo(path, params, token) {
     }
   }
 
-  const response = await fetch(url);
-  const text = await response.text();
-  let data = null;
-
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      // Ignore JSON parsing errors for non-JSON responses.
+  const cacheKey = buildTiingoCacheKey(path, params, token);
+  if (forceRefresh) {
+    tiingoResponseCache.delete(cacheKey);
+  } else {
+    const cached = tiingoResponseCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
     }
   }
 
-  if (!response.ok) {
-    const message = (data && (data.message || data.error || data.detail)) || text || response.statusText;
-    throw new Error(`Tiingo ${response.status}: ${String(message).slice(0, 200)}`);
-  }
+  const loader = async () => {
+    const response = await fetch(url);
+    const text = await response.text();
+    let data = null;
 
-  return data;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // Ignore JSON parsing errors for non-JSON responses.
+      }
+    }
+
+    if (!response.ok) {
+      const message = (data && (data.message || data.error || data.detail)) || text || response.statusText;
+      throw new Error(`Tiingo ${response.status}: ${String(message).slice(0, 200)}`);
+    }
+
+    return data;
+  };
+
+  return tiingoResponseCache.resolve(cacheKey, loader, cacheTtl);
 }
 
 /**
@@ -357,11 +385,14 @@ function withMeta(body, source, extraMeta = {}) {
  * @returns {Response}
  */
 function ok(body, source = 'live', extraHeaders = {}, extraMeta = {}) {
+  const extra = extraHeaders || {};
+  const hasCacheControl = Object.keys(extra).some((key) => key.toLowerCase() === 'cache-control');
   const headers = {
     ...corsHeaders,
     ...metaHeaders(),
     'X-Tiingo-Source': source,
-    ...extraHeaders,
+    ...(hasCacheControl ? {} : { 'cache-control': 'public, max-age=30, s-maxage=60' }),
+    ...extra,
   };
   return Response.json(withMeta(body, source, extraMeta), { headers });
 }
@@ -372,6 +403,7 @@ const mockResponse = (symbol, mode, warning, data, meta = {}) => {
     ...metaHeaders(),
     'X-Tiingo-Source': 'mock',
     'x-tiingo-fallback': 'mock',
+    'cache-control': 'public, max-age=120, s-maxage=240',
   };
   const body = {
     symbol,
@@ -398,6 +430,7 @@ export async function loadEod(symbol, limit, token) {
     `/tiingo/daily/${encodeURIComponent(symbol)}/prices`,
     { startDate, resampleFreq: 'daily' },
     token,
+    { cacheTtl: 10 * 60 * 1000 },
   );
 
   const list = Array.isArray(rows) ? rows.slice(-count) : [];
@@ -437,6 +470,7 @@ export async function loadIntraday(symbol, interval, limit, token) {
     `/iex/${encodeURIComponent(symbol)}/prices`,
     { startDate, resampleFreq: freq },
     token,
+    { cacheTtl: 30 * 1000 },
   );
 
   const list = Array.isArray(rows) ? rows.slice(-count) : [];
@@ -464,7 +498,7 @@ export async function loadIntraday(symbol, interval, limit, token) {
  * @returns {Promise<object|null>}
  */
 export async function loadIntradayLatest(symbol, token) {
-  const data = await tiingo('/iex', { tickers: symbol }, token);
+  const data = await tiingo('/iex', { tickers: symbol }, token, { cacheTtl: 10_000 });
   const row = Array.isArray(data) ? data.find((r) => (r.ticker || r.symbol || '').toUpperCase() === symbol.toUpperCase()) : null;
 
   if (!row) return null;
@@ -507,6 +541,7 @@ export async function loadFundamentals(symbol, token, limit = FUNDAMENTAL_LIMIT)
     `/tiingo/fundamentals/${encodeURIComponent(symbol)}/daily`,
     { limit: count },
     token,
+    { cacheTtl: 12 * 60 * 60 * 1000 },
   );
   const list = Array.isArray(rows) ? rows.filter((item) => item && typeof item === 'object') : [];
   list.sort((a, b) => new Date(a.reportDate || a.endDate || a.date || 0) - new Date(b.reportDate || b.endDate || b.date || 0));
@@ -573,6 +608,7 @@ export async function loadCompanyNews(symbol, limit, token) {
     '/tiingo/news',
     { tickers: symbol, limit: count, sortBy: 'publishedDate', includeBody: false },
     token,
+    { cacheTtl: 5 * 60 * 1000 },
   );
   const items = Array.isArray(rows) ? rows.map(mapNewsItem) : [];
   items.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
@@ -585,6 +621,7 @@ export async function loadCompanyDocuments(symbol, limit, token) {
     '/tiingo/news',
     { tickers: symbol, limit: count * 2, sortBy: 'publishedDate', tags: 'SEC', includeBody: false },
     token,
+    { cacheTtl: 15 * 60 * 1000 },
   );
   const items = (Array.isArray(rows) ? rows : [])
     .map(mapNewsItem)
@@ -602,8 +639,8 @@ export async function loadCompanyDocuments(symbol, limit, token) {
 export async function loadCorporateActions(symbol, token) {
   const startDate = new Date(Date.now() - ACTION_LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
   const [dividendsRaw, splitsRaw] = await Promise.all([
-    tiingo(`/tiingo/daily/${encodeURIComponent(symbol)}/dividends`, { startDate }, token).catch(() => []),
-    tiingo(`/tiingo/daily/${encodeURIComponent(symbol)}/splits`, { startDate }, token).catch(() => []),
+    tiingo(`/tiingo/daily/${encodeURIComponent(symbol)}/dividends`, { startDate }, token, { cacheTtl: 24 * 60 * 60 * 1000 }).catch(() => []),
+    tiingo(`/tiingo/daily/${encodeURIComponent(symbol)}/splits`, { startDate }, token, { cacheTtl: 24 * 60 * 60 * 1000 }).catch(() => []),
   ]);
   const dividends = Array.isArray(dividendsRaw)
     ? dividendsRaw.map((d) => ({
@@ -702,6 +739,7 @@ export async function loadFinancialStatements(symbol, token, limit = FUNDAMENTAL
     `/tiingo/fundamentals/${encodeURIComponent(symbol)}/statements`,
     { format: 'json', limit: Math.max(4, Number(limit) || FUNDAMENTAL_LIMIT) },
     token,
+    { cacheTtl: 6 * 60 * 60 * 1000 },
   );
 
   const sections = { income: [], balanceSheet: [], cashFlow: [] };
@@ -735,7 +773,7 @@ export async function loadFinancialStatements(symbol, token, limit = FUNDAMENTAL
 }
 
 export async function loadCompanyOverview(symbol, token) {
-  const data = await tiingo(`/tiingo/daily/${encodeURIComponent(symbol)}`, {}, token);
+  const data = await tiingo(`/tiingo/daily/${encodeURIComponent(symbol)}`, {}, token, { cacheTtl: 12 * 60 * 60 * 1000 });
   if (!data || typeof data !== 'object') return null;
   return {
     symbol: symbol.toUpperCase(),
@@ -935,7 +973,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'intraday_latest') {
       const quote = await loadIntradayLatest(symbol, token);
       if (quote) {
-        return ok({ symbol, data: [quote] }, 'live');
+        return ok({ symbol, data: [quote] }, 'live', { 'cache-control': 'public, max-age=10, s-maxage=20' });
       }
       const eod = await loadEod(symbol, 1, token).catch(() => []);
       if (eod.length) {
@@ -943,7 +981,7 @@ async function handleTiingoRequest(request) {
         return ok(
           { symbol, data: [eod[0]], warning: 'Intraday latest unavailable; showing EOD.' },
           'eod-fallback',
-          {},
+          { 'cache-control': 'public, max-age=600, s-maxage=1200' },
           { reason: 'intraday_latest_unavailable' },
         );
       }
@@ -955,7 +993,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'intraday') {
       const rows = await loadIntraday(symbol, interval, limit, token);
       if (rows.length) {
-        return ok({ symbol, data: rows }, 'live');
+        return ok({ symbol, data: rows }, 'live', { 'cache-control': 'public, max-age=30, s-maxage=60' });
       }
       const eod = await loadEod(symbol, limit, token).catch(() => []);
       if (eod.length) {
@@ -963,7 +1001,7 @@ async function handleTiingoRequest(request) {
         return ok(
           { symbol, data: eod, warning: 'Intraday unavailable; showing EOD.' },
           'eod-fallback',
-          {},
+          { 'cache-control': 'public, max-age=600, s-maxage=1200' },
           { reason: 'intraday_unavailable' },
         );
       }
@@ -975,7 +1013,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'news') {
       const news = await loadCompanyNews(symbol, limit, token);
       if (news.length) {
-        return ok({ symbol, data: news }, 'live');
+        return ok({ symbol, data: news }, 'live', { 'cache-control': 'public, max-age=300, s-maxage=600' });
       }
       return respondWithMock(kind, symbol, limit, 'Company news unavailable. Showing sample data.', { reason: 'news_unavailable' });
     }
@@ -983,7 +1021,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'documents') {
       const docs = await loadCompanyDocuments(symbol, limit, token);
       if (docs.length) {
-        return ok({ symbol, data: docs }, 'live');
+        return ok({ symbol, data: docs }, 'live', { 'cache-control': 'public, max-age=900, s-maxage=1800' });
       }
       return respondWithMock(kind, symbol, limit, 'Company filings unavailable. Showing sample data.', { reason: 'documents_unavailable' });
     }
@@ -991,7 +1029,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'filings') {
       const filings = await loadSecFilings(symbol, limit, token);
       if (filings.length) {
-        return ok({ symbol, data: filings }, 'live');
+        return ok({ symbol, data: filings }, 'live', { 'cache-control': 'public, max-age=900, s-maxage=1800' });
       }
       return respondWithMock(kind, symbol, limit, 'SEC filings unavailable. Showing sample data.', { reason: 'filings_unavailable' });
     }
@@ -999,7 +1037,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'fundamentals') {
       const fundamentals = await loadFundamentals(symbol, token, limit);
       if (fundamentals.latest) {
-        return ok({ symbol, data: fundamentals }, 'live');
+        return ok({ symbol, data: fundamentals }, 'live', { 'cache-control': 'public, max-age=43200, s-maxage=86400' });
       }
       return respondWithMock(kind, symbol, limit, 'Fundamentals unavailable. Showing sample data.', { reason: 'fundamentals_unavailable' });
     }
@@ -1007,7 +1045,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'actions') {
       const actions = await loadCorporateActions(symbol, token);
       if ((actions.dividends && actions.dividends.length) || (actions.splits && actions.splits.length)) {
-        return ok({ symbol, data: actions }, 'live');
+        return ok({ symbol, data: actions }, 'live', { 'cache-control': 'public, max-age=86400, s-maxage=172800' });
       }
       return respondWithMock(kind, symbol, limit, 'Corporate actions unavailable. Showing sample data.', { reason: 'actions_unavailable' });
     }
@@ -1015,7 +1053,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'overview') {
       const overview = await loadCompanyOverview(symbol, token);
       if (overview) {
-        return ok({ symbol, data: overview }, 'live');
+        return ok({ symbol, data: overview }, 'live', { 'cache-control': 'public, max-age=43200, s-maxage=86400' });
       }
       return respondWithMock(kind, symbol, limit, 'Company overview unavailable. Showing sample data.', { reason: 'overview_unavailable' });
     }
@@ -1023,7 +1061,7 @@ async function handleTiingoRequest(request) {
     if (kind === 'statements') {
       const statements = await loadFinancialStatements(symbol, token, limit);
       if (statements.income.length || statements.balanceSheet.length || statements.cashFlow.length) {
-        return ok({ symbol, data: statements }, 'live');
+        return ok({ symbol, data: statements }, 'live', { 'cache-control': 'public, max-age=21600, s-maxage=43200' });
       }
       return respondWithMock(kind, symbol, limit, 'Financial statements unavailable. Showing sample data.', { reason: 'statements_unavailable' });
     }
@@ -1031,14 +1069,14 @@ async function handleTiingoRequest(request) {
     if (kind === 'valuation') {
       const valuation = await loadValuation(symbol, token);
       if (valuation) {
-        return ok({ symbol, data: valuation }, 'live');
+        return ok({ symbol, data: valuation }, 'live', { 'cache-control': 'public, max-age=900, s-maxage=1800' });
       }
       return respondWithMock(kind, symbol, limit, 'Valuation snapshot unavailable. Showing sample data.', { reason: 'valuation_unavailable' });
     }
 
     const rows = await loadEod(symbol, limit, token);
     if (rows.length) {
-      return ok({ symbol, data: rows }, 'live');
+      return ok({ symbol, data: rows }, 'live', { 'cache-control': 'public, max-age=600, s-maxage=1200' });
     }
     return respondWithMock(kind, symbol, limit, 'EOD unavailable. Showing sample data.', { reason: 'eod_unavailable' });
   } catch (err) {

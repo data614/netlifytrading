@@ -1,8 +1,10 @@
 import { searchLocalSymbols } from './lib/localSymbolSearch.js';
 import { getTiingoToken } from './lib/env.js';
+import { createCache } from './lib/cache.js';
 
 const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 const DEFAULT_LIMIT = 25;
+const remoteSearchCache = createCache({ ttl: 5 * 60 * 1000, maxEntries: 200 });
 
 export default async (request) => {
   const url = new URL(request.url);
@@ -50,37 +52,49 @@ export default async (request) => {
 };
 
 async function fetchTiingoMatches(query, token, exchangeFilter, limit) {
-  const api = new URL('https://api.tiingo.com/tiingo/utilities/search');
-  api.searchParams.set('query', query);
-  api.searchParams.set('token', token);
-  const resp = await fetch(api);
-  if (!resp.ok) {
-    throw new Error(`tiingo responded with ${resp.status}`);
-  }
-  const body = await resp.json();
-  const items = Array.isArray(body) ? body : [];
-  const deduped = new Map();
-  for (const item of items) {
-    const symbol = (item.ticker || item.permaTicker || '').toUpperCase();
-    if (!symbol) continue;
-    const exchangeCode = (item.exchange || item.exchangeCode || '').toUpperCase();
-    const mic = mapExchangeCodeToMic(exchangeCode);
-    if (exchangeFilter && mic && exchangeFilter !== mic && exchangeFilter !== exchangeCode) continue;
-    const key = `${symbol}::${mic}`;
-    if (deduped.has(key)) continue;
-    deduped.set(key, {
-      symbol,
-      name: item.name || '',
-      exchange: exchangeCode || '',
-      mic,
-      country: item.country || '',
-      currency: item.currency || '',
-      type: item.assetType || '',
-      source: 'tiingo',
-    });
-    if (deduped.size >= limit * 2) break;
-  }
-  return Array.from(deduped.values());
+  const cacheKey = JSON.stringify({
+    query: query.toUpperCase(),
+    exchange: (exchangeFilter || '').toUpperCase(),
+    limit,
+    token: token || '',
+  });
+  return remoteSearchCache.resolve(
+    cacheKey,
+    async () => {
+      const api = new URL('https://api.tiingo.com/tiingo/utilities/search');
+      api.searchParams.set('query', query);
+      api.searchParams.set('token', token);
+      const resp = await fetch(api);
+      if (!resp.ok) {
+        throw new Error(`tiingo responded with ${resp.status}`);
+      }
+      const body = await resp.json();
+      const items = Array.isArray(body) ? body : [];
+      const deduped = new Map();
+      for (const item of items) {
+        const symbol = (item.ticker || item.permaTicker || '').toUpperCase();
+        if (!symbol) continue;
+        const exchangeCode = (item.exchange || item.exchangeCode || '').toUpperCase();
+        const mic = mapExchangeCodeToMic(exchangeCode);
+        if (exchangeFilter && mic && exchangeFilter !== mic && exchangeFilter !== exchangeCode) continue;
+        const key = `${symbol}::${mic}`;
+        if (deduped.has(key)) continue;
+        deduped.set(key, {
+          symbol,
+          name: item.name || '',
+          exchange: exchangeCode || '',
+          mic,
+          country: item.country || '',
+          currency: item.currency || '',
+          type: item.assetType || '',
+          source: 'tiingo',
+        });
+        if (deduped.size >= limit * 2) break;
+      }
+      return Array.from(deduped.values());
+    },
+    5 * 60 * 1000,
+  );
 }
 
 function mergeResults(primary, secondary, limit) {
