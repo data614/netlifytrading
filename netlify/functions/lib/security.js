@@ -1,3 +1,5 @@
+import { buildDefaultSecretPatterns } from './security-patterns.js';
+
 const SECRET_KEY_HINTS = [
   'KEY',
   'TOKEN',
@@ -14,12 +16,7 @@ const DEFAULT_REPLACEMENT = '[redacted]';
 const MIN_ENV_SECRET_LENGTH = 16;
 const ENV_CACHE_TTL_MS = 60_000;
 
-const DEFAULT_PATTERNS = [
-  /\b(?:sk|rk|pk)_[A-Za-z0-9]{16,}\b/gi,
-  /\b[A-Za-z0-9]{40,}\b/g,
-  /\b[0-9a-f]{32,}\b/gi,
-  /bearer\s+[A-Za-z0-9\-._~+/=]{16,}/gi,
-];
+const DEFAULT_PATTERNS = buildDefaultSecretPatterns();
 
 let cachedEnvSecrets = null;
 let cachedEnvFetchedAt = 0;
