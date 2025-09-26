@@ -289,6 +289,103 @@ body {
   color: var(--muted);
 }
 
+.market-radar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 160px;
+}
+
+.market-radar.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.market-radar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.85rem;
+}
+
+.market-radar-cell {
+  --heat-color: rgba(27, 39, 57, 0.85);
+  --heat-text: #eef6ff;
+  background: var(--heat-color);
+  color: var(--heat-text);
+  border-radius: 14px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 88px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 22px rgba(8, 14, 24, 0.45);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.market-radar-cell:hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 18px 30px rgba(8, 14, 24, 0.55);
+}
+
+.market-radar-cell.is-neutral {
+  --heat-color: rgba(20, 32, 48, 0.85);
+  --heat-text: rgba(231, 237, 255, 0.78);
+}
+
+.market-radar-symbol {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-size: 0.95rem;
+}
+
+.market-radar-metric {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.market-radar-details {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.market-radar-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(232, 239, 255, 0.65);
+}
+
+.market-radar-legend .legend-scale {
+  flex: 1;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c84444, #dca544, #2ea353);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.market-radar-legend .legend-label {
+  white-space: nowrap;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.market-radar-footnote {
+  text-align: right;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(232, 239, 255, 0.55);
+}
+
 .valuation-radar {
   margin-top: 1.4rem;
   padding: 1.2rem;

@@ -1,4 +1,5 @@
 import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
+import { computeRow, passesFilters, screenUniverse, suggestConcurrency } from './utils/quant-screener-core.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -25,12 +26,53 @@ const fmtPercent = (value) => {
   return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
 };
 
+const HEATMAP_LIMIT = 18;
+
+const clamp = (value, min, max) => {
+  if (Number.isNaN(value)) return min;
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+};
+
+const blendChannel = (start, end, ratio) => Math.round(start + (end - start) * ratio);
+
+function computeHeatColor(value, min, max) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const low = [200, 68, 68];
+  const high = [46, 163, 83];
+
+  if (max === min) {
+    const rgb = value >= 0 ? high : low;
+    const background = `rgb(${rgb.join(', ')})`;
+    const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+    const text = brightness < 140 ? '#f8fbff' : '#04141f';
+    return { background, text };
+  }
+
+  const span = max - min;
+  const ratio = clamp((value - min) / span, 0, 1);
+  const rgb = [
+    blendChannel(low[0], high[0], ratio),
+    blendChannel(low[1], high[1], ratio),
+    blendChannel(low[2], high[2], ratio),
+  ];
+  const background = `rgb(${rgb.join(', ')})`;
+  const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+  const text = brightness < 140 ? '#f8fbff' : '#04141f';
+  return { background, text };
+}
+
 const defaultUniverse = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'NFLX'];
 
 let currentResults = [];
 let processedRows = [];
 let currentSort = { key: 'upside', direction: 'desc' };
 let isScreening = false;
+let visibleRows = [];
 
 async function fetchIntel(symbol) {
   const url = new URL('/api/aiAnalyst', window.location.origin);
@@ -99,97 +141,79 @@ function readFilters() {
   };
 }
 
-function passesFilters(row, filters) {
-  const { minUpside, maxUpside, marketCapMin, marketCapMax, sectors } = filters;
-
-  if (minUpside !== null) {
-    if (!Number.isFinite(row.upside) || row.upside < minUpside) return false;
-  }
-
-  if (maxUpside !== null) {
-    if (!Number.isFinite(row.upside) || row.upside > maxUpside) return false;
-  }
-
-  if (marketCapMin !== null) {
-    if (!Number.isFinite(row.marketCap) || row.marketCap < marketCapMin) return false;
-  }
-
-  if (marketCapMax !== null) {
-    if (!Number.isFinite(row.marketCap) || row.marketCap > marketCapMax) return false;
-  }
-
-  if (sectors.length) {
-    const rowSector = (row.sector || '').toLowerCase();
-    if (!rowSector) return false;
-    const matches = sectors.some((sector) => rowSector.includes(sector));
-    if (!matches) return false;
-  }
-
-  return true;
-}
-
-function computeRow(symbol, data) {
-  const valuation = data?.valuation?.valuation || data?.valuation;
-  const valuationRoot = data?.valuation || {};
-  const overview = data?.overview || {};
-  const fundamentals = valuationRoot?.fundamentals || {};
-  const metrics = fundamentals?.metrics || {};
-  const price = valuationRoot?.price ?? valuation?.price ?? valuationRoot?.quote?.price;
-  const fairValue = valuation?.fairValue ?? null;
-  const upside = price && fairValue ? ((fairValue - price) / price) * 100 : null;
-  let marketCap = Number(overview.marketCap);
-  if (!Number.isFinite(marketCap)) {
-    const shares = Number(overview.sharesOutstanding ?? metrics.sharesOutstanding);
-    if (Number.isFinite(shares) && Number.isFinite(price)) {
-      marketCap = price * shares;
-    } else {
-      marketCap = null;
-    }
-  }
-  const sector = overview.sector || fundamentals.sector || fundamentals.profile?.sector || '';
-  const industry = overview.industry || fundamentals.industry || fundamentals.profile?.industry || '';
-  const momentum = (() => {
-    if (!Array.isArray(data?.trend) || data.trend.length < 2) return 0;
-    const first = Number(data.trend[0]?.close ?? data.trend[0]?.price);
-    const last = Number(data.trend[data.trend.length - 1]?.close ?? data.trend[data.trend.length - 1]?.price);
-    if (!Number.isFinite(first) || !Number.isFinite(last) || Math.abs(first) < 1e-6) return 0;
-    return ((last - first) / first) * 100;
-  })();
-  const remark = (data?.aiSummary || '').split('. ').slice(0, 2).join('. ');
-
-  return {
-    symbol,
-    sector,
-    industry,
-    price,
-    fairValue,
-    upside,
-    marketCap,
-    momentum,
-    summary: remark,
-    raw: data,
-  };
-}
-
 function renderHeatmap(rows) {
+  const container = $('#heatmap');
+  if (!container) return;
+
+  container.classList.remove('is-empty');
+  container.innerHTML = '';
+
   if (!rows.length) {
-    $('#heatmap').textContent = 'Run the screener to populate aggregated intelligence.';
+    container.classList.add('is-empty');
+    container.textContent = 'Run the screener to populate aggregated intelligence.';
     return;
   }
-  const top = [...rows].sort((a, b) => (b.upside ?? -Infinity) - (a.upside ?? -Infinity)).slice(0, 3);
-  const laggards = [...rows].sort((a, b) => (a.upside ?? Infinity) - (b.upside ?? Infinity)).slice(0, 3);
-  const momentumLeaders = [...rows].sort((a, b) => (b.momentum ?? -Infinity) - (a.momentum ?? -Infinity)).slice(0, 3);
 
-  $('#heatmap').innerHTML = [
-    `<strong>Top upside</strong>: ${top.map((row) => `${row.symbol} (${fmtPercent(row.upside)})`).join(', ')}`,
-    `<strong>Weakest upside</strong>: ${laggards.map((row) => `${row.symbol} (${fmtPercent(row.upside)})`).join(', ')}`,
-    `<strong>Momentum leaders</strong>: ${momentumLeaders.map((row) => `${row.symbol} (${fmtPercent(row.momentum)})`).join(', ')}`,
-  ].join('<br/>');
+  const numericUpsides = rows.map((row) => Number(row.upside)).filter((value) => Number.isFinite(value));
+  if (!numericUpsides.length) {
+    container.classList.add('is-empty');
+    container.textContent = 'Upside estimates are unavailable for the current results.';
+    return;
+  }
+
+  const minUpside = Math.min(...numericUpsides);
+  const maxUpside = Math.max(...numericUpsides);
+  const sorted = [...rows].sort((a, b) => (b.upside ?? -Infinity) - (a.upside ?? -Infinity));
+  const limited = sorted.slice(0, HEATMAP_LIMIT);
+
+  const grid = document.createElement('div');
+  grid.className = 'market-radar-grid';
+
+  limited.forEach((row, index) => {
+    const cell = document.createElement('div');
+    cell.className = 'market-radar-cell';
+    const heat = computeHeatColor(Number(row.upside), minUpside, maxUpside);
+    if (!heat) {
+      cell.classList.add('is-neutral');
+    } else {
+      cell.style.setProperty('--heat-color', heat.background);
+      cell.style.setProperty('--heat-text', heat.text);
+    }
+    const upsideLabel = fmtPercent(row.upside);
+    const momentumLabel = fmtPercent(row.momentum);
+    const rank = index + 1;
+    cell.title = `${row.symbol} · Upside ${upsideLabel} · Momentum ${momentumLabel} · Rank ${rank}`;
+    cell.innerHTML = `
+      <span class="market-radar-symbol">${row.symbol}</span>
+      <span class="market-radar-metric">Upside ${upsideLabel}</span>
+      <span class="market-radar-details">Momentum ${momentumLabel}</span>
+    `;
+    grid.appendChild(cell);
+  });
+
+  container.appendChild(grid);
+
+  const legend = document.createElement('div');
+  legend.className = 'market-radar-legend';
+  legend.innerHTML = `
+    <span class="legend-label">Low upside</span>
+    <span class="legend-scale" aria-hidden="true"></span>
+    <span class="legend-label">High upside</span>
+  `;
+  container.appendChild(legend);
+
+  if (sorted.length > limited.length) {
+    const footnote = document.createElement('div');
+    footnote.className = 'market-radar-footnote';
+    footnote.textContent = `Displaying top ${limited.length} of ${sorted.length} results by upside.`;
+    container.appendChild(footnote);
+  }
 }
 
 function renderTable(rows) {
   const tbody = $('#screenerTable tbody');
   tbody.innerHTML = '';
+  visibleRows = Array.isArray(rows) ? [...rows] : [];
   rows.forEach((row) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -278,31 +302,50 @@ async function runScreen() {
   updateSummary([]);
   setStatus(`Screening ${universe.length} tickers using ChatGPT‑5…`, 'info');
 
-  for (const [index, symbol] of universe.entries()) {
-    try {
-      const { data } = await fetchIntel(symbol);
-      const row = computeRow(symbol, data);
+  const concurrency = suggestConcurrency(universe.length);
+
+  const { matches, processed, reachedCap } = await screenUniverse(universe, {
+    fetchIntel,
+    computeRow,
+    passesFilters: (row) => passesFilters(row, filters),
+    filters,
+    batchCap,
+    concurrency,
+    onItemComplete: ({
+      symbol,
+      row,
+      passes,
+      processedCount,
+      total: totalSymbols,
+      matchesCount,
+      reachedCap: capReached,
+    }) => {
       processedRows.push(row);
-      if (!passesFilters(row, filters)) {
-        setStatus(`Processed ${index + 1}/${universe.length}. ${symbol} filtered out by criteria.`, 'info');
-        continue;
+      if (!passes) {
+        setStatus(`Processed ${processedCount}/${totalSymbols}. ${symbol} filtered out by criteria.`, 'info');
+        return;
       }
+
       currentResults.push(row);
       const sorted = sortResults(currentResults, currentSort.key, currentSort.direction);
       renderTable(sorted);
       updateSummary(sorted);
       renderHeatmap(sorted);
-      setStatus(`Processed ${index + 1}/${universe.length}. ${currentResults.length} matches so far.`, 'info');
-      if (currentResults.length >= batchCap) {
+      if (capReached) {
         setStatus(`Reached batch cap of ${batchCap} tickers.`, 'success');
-        break;
+      } else {
+        setStatus(`Processed ${processedCount}/${totalSymbols}. ${matchesCount} matches so far.`, 'info');
       }
-    } catch (error) {
+    },
+    onError: ({ symbol, error, processedCount, total: totalSymbols }) => {
       console.error(error);
-      setStatus(`Error processing ${symbol}: ${error.message}`, 'error');
-    }
-  }
+      const message = error?.message || 'Unknown error';
+      setStatus(`Error processing ${symbol} (${processedCount}/${totalSymbols}): ${message}`, 'error');
+    },
+  });
 
+  processedRows = processed;
+  currentResults = matches;
   isScreening = false;
 
   applyFilters({ silent: true });
@@ -335,6 +378,7 @@ function attachSortHandlers() {
       const sorted = sortResults(currentResults, currentSort.key, currentSort.direction);
       renderTable(sorted);
       updateSummary(sorted);
+      renderHeatmap(sorted);
     });
   });
 }
@@ -362,12 +406,13 @@ function registerFilterControls() {
 }
 
 function downloadCsv() {
-  if (!currentResults.length) {
-    setStatus('No data to export yet.', 'error');
+  const source = visibleRows.length ? visibleRows : currentResults;
+  if (!source.length) {
+    setStatus('No table data available to export yet.', 'error');
     return;
   }
   const header = ['Symbol', 'Sector', 'MarketCap', 'Price', 'FairValue', 'Upside', 'Momentum', 'Summary'];
-  const lines = currentResults.map((row) => [
+  const lines = source.map((row) => [
     row.symbol,
     row.sector || '',
     Number.isFinite(row.marketCap) ? row.marketCap : '',
@@ -387,7 +432,7 @@ function downloadCsv() {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  setStatus('CSV exported.', 'success');
+  setStatus(`CSV exported with ${source.length} row${source.length === 1 ? '' : 's'}.`, 'success');
 }
 
 function init() {
