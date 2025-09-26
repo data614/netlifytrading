@@ -1,0 +1,492 @@
+{
+  "generatedAt": "2025-09-26T13:45:32.589Z",
+  "summary": {
+    "totalFiles": 92,
+    "byCategory": {
+      "frontend": 29,
+      "backend": 18,
+      "shared": 11,
+      "tooling": 2,
+      "tests": 20,
+      "docs": 0,
+      "data": 11,
+      "other": 1
+    }
+  },
+  "files": {
+    "other": [
+      {
+        "path": ".grok/settings.json",
+        "size": "30 B",
+        "bytes": 30
+      }
+    ],
+    "frontend": [
+      {
+        "path": "ai-analyst-batch-table.js",
+        "size": "11.3 KB",
+        "bytes": 11546
+      },
+      {
+        "path": "ai-analyst.css",
+        "size": "14.5 KB",
+        "bytes": 14886
+      },
+      {
+        "path": "ai-analyst.html",
+        "size": "9.6 KB",
+        "bytes": 9813
+      },
+      {
+        "path": "ai-analyst.js",
+        "size": "14.9 KB",
+        "bytes": 15260
+      },
+      {
+        "path": "app.css",
+        "size": "13.9 KB",
+        "bytes": 14245
+      },
+      {
+        "path": "app.js",
+        "size": "66.0 KB",
+        "bytes": 67567
+      },
+      {
+        "path": "index.html",
+        "size": "6.4 KB",
+        "bytes": 6525
+      },
+      {
+        "path": "package-lock.json",
+        "size": "661.7 KB",
+        "bytes": 677557
+      },
+      {
+        "path": "package.json",
+        "size": "794 B",
+        "bytes": 794
+      },
+      {
+        "path": "professional-desk.html",
+        "size": "5.4 KB",
+        "bytes": 5482
+      },
+      {
+        "path": "professional/api-client.js",
+        "size": "4.1 KB",
+        "bytes": 4166
+      },
+      {
+        "path": "professional/feeds.js",
+        "size": "13.4 KB",
+        "bytes": 13733
+      },
+      {
+        "path": "professional/pro-shared.css",
+        "size": "24.9 KB",
+        "bytes": 25469
+      },
+      {
+        "path": "professional/professional-desk.js",
+        "size": "13.9 KB",
+        "bytes": 14281
+      },
+      {
+        "path": "professional/research-data.js",
+        "size": "8.2 KB",
+        "bytes": 8408
+      },
+      {
+        "path": "professional/research-modules.js",
+        "size": "10.1 KB",
+        "bytes": 10371
+      },
+      {
+        "path": "professional/ui-components.js",
+        "size": "2.9 KB",
+        "bytes": 3018
+      },
+      {
+        "path": "professional/valuation-lab.js",
+        "size": "8.6 KB",
+        "bytes": 8809
+      },
+      {
+        "path": "quant-screener.html",
+        "size": "3.7 KB",
+        "bytes": 3824
+      },
+      {
+        "path": "quant-screener.js",
+        "size": "17.8 KB",
+        "bytes": 18264
+      },
+      {
+        "path": "run-tiingo.mjs",
+        "size": "398 B",
+        "bytes": 398
+      },
+      {
+        "path": "style.css",
+        "size": "417 B",
+        "bytes": 417
+      },
+      {
+        "path": "test-tiingo.js",
+        "size": "1.3 KB",
+        "bytes": 1322
+      },
+      {
+        "path": "tmp-import.mjs",
+        "size": "77 B",
+        "bytes": 77
+      },
+      {
+        "path": "tmp-load.mjs",
+        "size": "66 B",
+        "bytes": 66
+      },
+      {
+        "path": "tmp-load2.mjs",
+        "size": "84 B",
+        "bytes": 84
+      },
+      {
+        "path": "tmp-run-search.mjs",
+        "size": "269 B",
+        "bytes": 269
+      },
+      {
+        "path": "valuation-lab.html",
+        "size": "14.8 KB",
+        "bytes": 15169
+      },
+      {
+        "path": "vitest.config.js",
+        "size": "298 B",
+        "bytes": 298
+      }
+    ],
+    "data": [
+      {
+        "path": "data/mocks/tiingo/AAPL-actions.json",
+        "size": "466 B",
+        "bytes": 466
+      },
+      {
+        "path": "data/mocks/tiingo/AAPL-documents.json",
+        "size": "347 B",
+        "bytes": 347
+      },
+      {
+        "path": "data/mocks/tiingo/AAPL-eod.json",
+        "size": "1.0 KB",
+        "bytes": 1047
+      },
+      {
+        "path": "data/mocks/tiingo/AAPL-fundamentals.json",
+        "size": "1.6 KB",
+        "bytes": 1608
+      },
+      {
+        "path": "data/mocks/tiingo/AAPL-intraday.json",
+        "size": "1.0 KB",
+        "bytes": 1046
+      },
+      {
+        "path": "data/mocks/tiingo/AAPL-news.json",
+        "size": "775 B",
+        "bytes": 775
+      },
+      {
+        "path": "data/mocks/tiingo/AAPL-overview.json",
+        "size": "253 B",
+        "bytes": 253
+      },
+      {
+        "path": "data/symbols.json",
+        "size": "1.78 MB",
+        "bytes": 1861860
+      },
+      {
+        "path": "data/tiingo-mock/AAPL.json",
+        "size": "7.2 KB",
+        "bytes": 7388
+      },
+      {
+        "path": "data/tiingo-mock/GENERIC.json",
+        "size": "3.2 KB",
+        "bytes": 3236
+      },
+      {
+        "path": "data/tiingo-mock/MSFT.json",
+        "size": "4.5 KB",
+        "bytes": 4601
+      }
+    ],
+    "backend": [
+      {
+        "path": "netlify/functions/ai-analyst.js",
+        "size": "22.2 KB",
+        "bytes": 22730
+      },
+      {
+        "path": "netlify/functions/aiAnalyst.js",
+        "size": "9.8 KB",
+        "bytes": 10053
+      },
+      {
+        "path": "netlify/functions/aiAnalystBatch.js",
+        "size": "7.6 KB",
+        "bytes": 7743
+      },
+      {
+        "path": "netlify/functions/env-check.js",
+        "size": "1.7 KB",
+        "bytes": 1716
+      },
+      {
+        "path": "netlify/functions/hello.js",
+        "size": "126 B",
+        "bytes": 126
+      },
+      {
+        "path": "netlify/functions/lib/cache.js",
+        "size": "2.6 KB",
+        "bytes": 2691
+      },
+      {
+        "path": "netlify/functions/lib/codex.js",
+        "size": "2.1 KB",
+        "bytes": 2134
+      },
+      {
+        "path": "netlify/functions/lib/env.js",
+        "size": "1.7 KB",
+        "bytes": 1719
+      },
+      {
+        "path": "netlify/functions/lib/gemini.js",
+        "size": "2.4 KB",
+        "bytes": 2420
+      },
+      {
+        "path": "netlify/functions/lib/grok.js",
+        "size": "2.2 KB",
+        "bytes": 2248
+      },
+      {
+        "path": "netlify/functions/lib/localSymbolSearch.js",
+        "size": "4.6 KB",
+        "bytes": 4739
+      },
+      {
+        "path": "netlify/functions/lib/valuation.js",
+        "size": "6.5 KB",
+        "bytes": 6625
+      },
+      {
+        "path": "netlify/functions/manifest.json",
+        "size": "2.1 KB",
+        "bytes": 2189
+      },
+      {
+        "path": "netlify/functions/news.js",
+        "size": "6.1 KB",
+        "bytes": 6247
+      },
+      {
+        "path": "netlify/functions/search.js",
+        "size": "5.7 KB",
+        "bytes": 5795
+      },
+      {
+        "path": "netlify/functions/sendEmail.js",
+        "size": "2.6 KB",
+        "bytes": 2706
+      },
+      {
+        "path": "netlify/functions/tiingo-data.js",
+        "size": "40.1 KB",
+        "bytes": 41073
+      },
+      {
+        "path": "netlify/functions/tiingo.js",
+        "size": "123 B",
+        "bytes": 123
+      }
+    ],
+    "tooling": [
+      {
+        "path": "scripts/build-symbols.mjs",
+        "size": "8.2 KB",
+        "bytes": 8383
+      },
+      {
+        "path": "scripts/peer-review/generate-file-inventory.mjs",
+        "size": "4.0 KB",
+        "bytes": 4143
+      }
+    ],
+    "tests": [
+      {
+        "path": "tests/ai-analyst-batch-table.js",
+        "size": "56 B",
+        "bytes": 56
+      },
+      {
+        "path": "tests/aiAnalyst.spec.js",
+        "size": "2.5 KB",
+        "bytes": 2522
+      },
+      {
+        "path": "tests/aiAnalystBatch.spec.js",
+        "size": "9.3 KB",
+        "bytes": 9472
+      },
+      {
+        "path": "tests/aiAnalystFunction.spec.js",
+        "size": "5.6 KB",
+        "bytes": 5750
+      },
+      {
+        "path": "tests/aiAnalystNormalizer.spec.js",
+        "size": "2.7 KB",
+        "bytes": 2781
+      },
+      {
+        "path": "tests/browser-cache.spec.js",
+        "size": "2.9 KB",
+        "bytes": 3016
+      },
+      {
+        "path": "tests/quantMath.spec.js",
+        "size": "1.1 KB",
+        "bytes": 1150
+      },
+      {
+        "path": "tests/quantScreenerProcessor.spec.js",
+        "size": "2.8 KB",
+        "bytes": 2875
+      },
+      {
+        "path": "tests/setup-environment.js",
+        "size": "1.2 KB",
+        "bytes": 1271
+      },
+      {
+        "path": "tests/tiingo.documents_actions.spec.js",
+        "size": "1.5 KB",
+        "bytes": 1534
+      },
+      {
+        "path": "tests/tiingo.fallback.spec.js",
+        "size": "1.9 KB",
+        "bytes": 1910
+      },
+      {
+        "path": "tests/tiingo.spec.js",
+        "size": "6.5 KB",
+        "bytes": 6685
+      },
+      {
+        "path": "tests/utils/ai-analyst-normalizer.js",
+        "size": "64 B",
+        "bytes": 64
+      },
+      {
+        "path": "tests/utils/cache.spec.js",
+        "size": "2.3 KB",
+        "bytes": 2352
+      },
+      {
+        "path": "tests/utils/frontend-errors.js",
+        "size": "48 B",
+        "bytes": 48
+      },
+      {
+        "path": "tests/utils/persistentScreenPreferences.spec.js",
+        "size": "2.7 KB",
+        "bytes": 2744
+      },
+      {
+        "path": "tests/utils/user-preferences.spec.js",
+        "size": "2.8 KB",
+        "bytes": 2858
+      },
+      {
+        "path": "tests/utils/valuation-scorer.js",
+        "size": "49 B",
+        "bytes": 49
+      },
+      {
+        "path": "tests/valuation-radar.spec.js",
+        "size": "1.6 KB",
+        "bytes": 1631
+      },
+      {
+        "path": "tests/valuation.spec.js",
+        "size": "1.8 KB",
+        "bytes": 1840
+      }
+    ],
+    "shared": [
+      {
+        "path": "utils/ai-analyst-batch.js",
+        "size": "6.7 KB",
+        "bytes": 6881
+      },
+      {
+        "path": "utils/ai-analyst-client.js",
+        "size": "2.6 KB",
+        "bytes": 2697
+      },
+      {
+        "path": "utils/ai-analyst-normalizer.js",
+        "size": "5.0 KB",
+        "bytes": 5120
+      },
+      {
+        "path": "utils/browser-cache.js",
+        "size": "6.7 KB",
+        "bytes": 6864
+      },
+      {
+        "path": "utils/cache.js",
+        "size": "2.0 KB",
+        "bytes": 2093
+      },
+      {
+        "path": "utils/frontend-errors.js",
+        "size": "6.8 KB",
+        "bytes": 6967
+      },
+      {
+        "path": "utils/persistent-screen-preferences.js",
+        "size": "5.9 KB",
+        "bytes": 6073
+      },
+      {
+        "path": "utils/quant-math.js",
+        "size": "1.2 KB",
+        "bytes": 1218
+      },
+      {
+        "path": "utils/quant-screener-core.js",
+        "size": "5.6 KB",
+        "bytes": 5739
+      },
+      {
+        "path": "utils/user-preferences.js",
+        "size": "3.4 KB",
+        "bytes": 3468
+      },
+      {
+        "path": "utils/valuation-scorer.js",
+        "size": "3.1 KB",
+        "bytes": 3174
+      }
+    ]
+  }
+}
