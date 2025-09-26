@@ -8,6 +8,19 @@ const state = {
 
 const statusBanner = createStatusBanner();
 
+const controlDefaults = {
+  revenueCagr: 12,
+  terminalGrowth: '3',
+  growthMode: 'accelerating',
+  ebitdaMargin: 28,
+  operatingLeverage: 'balanced',
+  fcfConversion: 85,
+  costMode: 'opex',
+  discountRate: 8,
+  debtRatio: 0.8,
+  buyback: 'neutral',
+};
+
 function formatCurrency(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
   return `$${Number(value).toFixed(2)}`;
@@ -84,6 +97,93 @@ function renderSnapshot(snapshot) {
   renderScenarios(snapshot);
 }
 
+function updateSliderDisplay(inputId, outputId, formatter) {
+  const input = document.getElementById(inputId);
+  const output = document.getElementById(outputId);
+  if (!input || !output) return;
+  const value = input.value;
+  output.textContent = formatter ? formatter(value) : value;
+}
+
+function setActiveToggle(groupId, mode) {
+  const group = document.getElementById(groupId);
+  if (!group) return;
+  group.querySelectorAll('.valuation-toggle').forEach((btn) => {
+    const isActive = btn.dataset.mode === mode;
+    btn.classList.toggle('active', isActive);
+  });
+}
+
+function resetControls({ silent } = {}) {
+  const revenue = document.getElementById('valuation-revenue-cagr');
+  const terminal = document.getElementById('valuation-terminal-growth');
+  const ebitda = document.getElementById('valuation-ebitda-margin');
+  const leverage = document.getElementById('valuation-operating-leverage');
+  const conversion = document.getElementById('valuation-fcf-conversion');
+  const discount = document.getElementById('valuation-discount-rate');
+  const debt = document.getElementById('valuation-debt-ratio');
+  const buyback = document.getElementById('valuation-share-buyback');
+
+  if (revenue) revenue.value = controlDefaults.revenueCagr;
+  if (terminal) terminal.value = controlDefaults.terminalGrowth;
+  if (ebitda) ebitda.value = controlDefaults.ebitdaMargin;
+  if (leverage) leverage.value = controlDefaults.operatingLeverage;
+  if (conversion) conversion.value = controlDefaults.fcfConversion;
+  if (discount) discount.value = controlDefaults.discountRate;
+  if (debt) debt.value = controlDefaults.debtRatio;
+  if (buyback) buyback.value = controlDefaults.buyback;
+
+  updateSliderDisplay('valuation-revenue-cagr', 'valuation-revenue-cagr-value', (val) => `${Number(val).toFixed(0)}%`);
+  updateSliderDisplay('valuation-ebitda-margin', 'valuation-ebitda-margin-value', (val) => `${Number(val).toFixed(0)}%`);
+  updateSliderDisplay('valuation-discount-rate', 'valuation-discount-rate-value', (val) => `${Number(val).toFixed(0)}%`);
+
+  setActiveToggle('valuation-growth-mode-group', controlDefaults.growthMode);
+  setActiveToggle('valuation-cost-mode-group', controlDefaults.costMode);
+
+  if (!silent) {
+    statusBanner.setMessage('Controls reverted to baseline assumptions.');
+  }
+}
+
+function initControlBindings() {
+  const sliders = [
+    ['valuation-revenue-cagr', 'valuation-revenue-cagr-value', (val) => `${Number(val).toFixed(0)}%`],
+    ['valuation-ebitda-margin', 'valuation-ebitda-margin-value', (val) => `${Number(val).toFixed(0)}%`],
+    ['valuation-discount-rate', 'valuation-discount-rate-value', (val) => `${Number(val).toFixed(0)}%`],
+  ];
+
+  sliders.forEach(([inputId, outputId, format]) => {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    updateSliderDisplay(inputId, outputId, format);
+    input.addEventListener('input', () => updateSliderDisplay(inputId, outputId, format));
+  });
+
+  document.querySelectorAll('.valuation-toggle-group').forEach((group) => {
+    group.addEventListener('click', (event) => {
+      const button = event.target.closest('.valuation-toggle');
+      if (!button) return;
+      group.querySelectorAll('.valuation-toggle').forEach((el) => el.classList.remove('active'));
+      button.classList.add('active');
+    });
+  });
+
+  const resetButton = document.getElementById('valuation-reset-controls');
+  if (resetButton) {
+    resetButton.addEventListener('click', () => resetControls({ silent: false }));
+  }
+
+  const applyButton = document.getElementById('valuation-apply-controls');
+  if (applyButton) {
+    applyButton.addEventListener('click', () => {
+      statusBanner.setMessage('Recomputing valuation with scenario overrides…');
+      refreshSnapshot();
+    });
+  }
+
+  resetControls({ silent: true });
+}
+
 async function refreshSnapshot() {
   if (!state.symbol) return;
   state.loading = true;
@@ -132,6 +232,8 @@ function init() {
   document.querySelectorAll('[data-active-symbol]').forEach((el) => {
     el.textContent = state.symbol;
   });
+
+  initControlBindings();
 
   refreshSnapshot();
 }
