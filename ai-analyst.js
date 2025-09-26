@@ -1,5 +1,5 @@
 import { computeValuationScores, VALUATION_RADAR_LABELS } from './utils/valuation-scorer.js';
-import { enrichError } from './utils/frontend-errors.js';
+import { fetchAnalystIntel } from './utils/ai-analyst-client.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -228,47 +228,6 @@ function renderValuationRadar({ price, upside, fundamentals }) {
   if (container) container.classList.toggle('is-empty', !composite?.availableCount);
 
   updateRadarChart([pe?.score, ps?.score, upsideMetric?.score, composite?.score]);
-}
-
-async function fetchIntel({ symbol, limit, timeframe }) {
-  const url = new URL('/.netlify/functions/ai-analyst', window.location.origin);
-  url.searchParams.set('symbol', symbol);
-  url.searchParams.set('limit', limit);
-  url.searchParams.set('timeframe', timeframe);
-
-  try {
-    const response = await fetch(url, { headers: { accept: 'application/json' } });
-    const contentType = (response.headers.get('content-type') || '').toLowerCase();
-
-    if (!response.ok) {
-      let payload = null;
-      let text = '';
-      if (contentType.includes('application/json')) {
-        payload = await response.json().catch(() => null);
-      } else {
-        text = await response.text().catch(() => '');
-      }
-
-      const rawMessage = payload?.error || payload?.message || payload?.detail || text || response.statusText;
-      const error = new Error(rawMessage || 'AI Analyst request failed.');
-      error.status = response.status;
-      if (payload) {
-        error.response = payload;
-        error.detail = payload?.detail || payload?.error || payload?.message || '';
-      } else if (text) {
-        error.responseText = text;
-      }
-      throw error;
-    }
-
-    const body = await response.json();
-    return body;
-  } catch (error) {
-    throw enrichError(error, {
-      context: 'ai-analyst',
-      fallback: 'AI Analyst is currently unavailable. Please try again shortly.',
-    });
-  }
 }
 
 function updateValuationCard(valuationData = {}) {
@@ -664,7 +623,7 @@ async function runAnalysis() {
   $('#intelTimestamp').textContent = '';
 
   try {
-    const { data, warning } = await fetchIntel({ symbol, limit, timeframe });
+    const { data, warning } = await fetchAnalystIntel({ symbol, limit, timeframe });
     if (!data) throw new Error('No intelligence returned');
 
     updateValuationCard(data.valuation);
