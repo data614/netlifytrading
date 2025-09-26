@@ -1,3 +1,5 @@
+import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
+
 const $ = (selector) => document.querySelector(selector);
 
 const fmtCurrency = (value) => {
@@ -21,12 +23,20 @@ async function fetchIntel(symbol) {
   const url = new URL('/api/aiAnalyst', window.location.origin);
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('limit', 120);
+  url.searchParams.set('priceLimit', 120);
   url.searchParams.set('timeframe', '3M');
+  url.searchParams.set('newsLimit', 12);
+  url.searchParams.set('documentLimit', 12);
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) {
     throw new Error(`Failed to analyse ${symbol}: ${response.status}`);
   }
-  return response.json();
+  const body = await response.json();
+  const warningHeader =
+    response.headers.get('x-ai-analyst-warning')
+    || response.headers.get('x-intel-warning')
+    || '';
+  return normalizeAiAnalystPayload(body, { warningHeader });
 }
 
 function parseUniverse(raw) {

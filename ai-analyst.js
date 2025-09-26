@@ -1,5 +1,6 @@
 import { computeValuationScores, VALUATION_RADAR_LABELS } from './utils/valuation-scorer.js';
 import { enrichError } from './utils/frontend-errors.js';
+import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -234,7 +235,10 @@ async function fetchIntel({ symbol, limit, timeframe }) {
   const url = new URL('/.netlify/functions/ai-analyst', window.location.origin);
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('limit', limit);
+  url.searchParams.set('priceLimit', limit);
   url.searchParams.set('timeframe', timeframe);
+  url.searchParams.set('newsLimit', 12);
+  url.searchParams.set('documentLimit', 12);
 
   try {
     const response = await fetch(url, { headers: { accept: 'application/json' } });
@@ -262,7 +266,11 @@ async function fetchIntel({ symbol, limit, timeframe }) {
     }
 
     const body = await response.json();
-    return body;
+    const warningHeader =
+      response.headers.get('x-ai-analyst-warning')
+      || response.headers.get('x-intel-warning')
+      || '';
+    return normalizeAiAnalystPayload(body, { warningHeader });
   } catch (error) {
     throw enrichError(error, {
       context: 'ai-analyst',
@@ -664,7 +672,7 @@ async function runAnalysis() {
   $('#intelTimestamp').textContent = '';
 
   try {
-    const { data, warning } = await fetchIntel({ symbol, limit, timeframe });
+    const { data, warning, meta } = await fetchIntel({ symbol, limit, timeframe });
     if (!data) throw new Error('No intelligence returned');
 
     updateValuationCard(data.valuation);
@@ -679,7 +687,10 @@ async function runAnalysis() {
     const tone = warning ? 'info' : 'success';
     setStatus(message, tone);
 
-    lastAnalysis = { symbol, limit, timeframe, data };
+    lastAnalysis = { symbol, limit, timeframe, data, meta };
+    if (meta?.narrativeSource) {
+      console.info('AI Analyst narrative source:', meta.narrativeSource, meta);
+    }
   } catch (error) {
     console.error(error);
     setStatus(error?.userMessage || error?.friendlyMessage || error?.message || 'Analysis failed. Please retry.', 'error');
