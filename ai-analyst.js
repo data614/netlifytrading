@@ -22,8 +22,25 @@ const isFiniteNumber = (value) =>
   value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
 
 let priceChart;
+let valuationRadarChart;
 let lastAnalysis = null;
 let runButtonDefaultHtml = '';
+
+const radarLabels = ['P/E', 'P/S', 'Analyst Upside', 'AI Score'];
+
+const fmtMultiple = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return `${num.toFixed(1)}×`;
+};
+
+const clampValue = (value, min, max) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (typeof min === 'number' && num < min) return min;
+  if (typeof max === 'number' && num > max) return max;
+  return num;
+};
 
 function extractValuationMetrics(valuationData = {}) {
   const valuation = valuationData?.valuation || valuationData;
@@ -37,12 +54,16 @@ function extractValuationMetrics(valuationData = {}) {
   return { price, fairValue, upside, entry, breakdown, fundamentals };
 }
 
-function resetValuationCard(message = 'Awaiting valuation inputs from Tiingo fundamentals.') {
+function resetValuationCard(
+  message = 'Awaiting valuation inputs from Tiingo fundamentals.',
+  radarMessage = 'Quant metrics awaiting Tiingo fundamentals.',
+) {
   $('#valuationPrice').textContent = '—';
   $('#valuationFair').textContent = '—';
   $('#valuationUpside').textContent = '—';
   $('#valuationEntry').textContent = '—';
   $('#valuationBreakdown').textContent = message;
+  resetValuationRadar(radarMessage);
 }
 
 function resetPriceChart(message = 'Awaiting price data.') {
@@ -51,6 +72,223 @@ function resetPriceChart(message = 'Awaiting price data.') {
     priceChart.destroy();
     priceChart = null;
   }
+}
+
+function setMetricBar(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (Number.isFinite(value)) {
+    el.style.width = `${Math.max(0, Math.min(100, value))}%`;
+    el.dataset.empty = 'false';
+  } else {
+    el.style.width = '0%';
+    el.dataset.empty = 'true';
+  }
+}
+
+function resetValuationRadar(message = 'Quant metrics awaiting Tiingo fundamentals.') {
+  const centerScore = document.getElementById('valuationAiScore');
+  if (centerScore) {
+    centerScore.textContent = '—';
+    delete centerScore.dataset.unit;
+  }
+  const inlineScore = document.getElementById('valuationAiScoreInline');
+  if (inlineScore) inlineScore.textContent = '—';
+  const peEl = document.getElementById('valuationPe');
+  if (peEl) peEl.textContent = '—';
+  const psEl = document.getElementById('valuationPs');
+  if (psEl) psEl.textContent = '—';
+  const upsideEl = document.getElementById('valuationUpsideMetric');
+  if (upsideEl) upsideEl.textContent = '—';
+  setMetricBar('valuationPeBar', null);
+  setMetricBar('valuationPsBar', null);
+  setMetricBar('valuationUpsideBar', null);
+  setMetricBar('valuationScoreBar', null);
+  const caption = document.getElementById('valuationRadarCaption');
+  if (caption) caption.textContent = message;
+  const container = document.getElementById('valuationRadar');
+  if (container) container.classList.add('is-empty');
+  if (valuationRadarChart) {
+    valuationRadarChart.destroy();
+    valuationRadarChart = null;
+  }
+}
+
+function computeRadarMetrics({ price, upside, fundamentals }) {
+  const metrics = fundamentals?.metrics || fundamentals || {};
+  const toFinite = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const cleanPrice = toFinite(price);
+  const eps = toFinite(metrics.earningsPerShare ?? metrics.eps);
+  const revenuePerShare = toFinite(metrics.revenuePerShare ?? metrics.salesPerShare ?? metrics.revenuePS);
+
+  const peRatio = cleanPrice !== null && eps && Math.abs(eps) > 1e-6 ? cleanPrice / eps : null;
+  const psRatio = cleanPrice !== null && revenuePerShare && Math.abs(revenuePerShare) > 1e-6 ? cleanPrice / revenuePerShare : null;
+  const upsidePct = Number.isFinite(upside) ? upside * 100 : null;
+
+  const peScore = (() => {
+    if (!Number.isFinite(peRatio) || peRatio <= 0) return null;
+    const min = 8;
+    const max = 40;
+    const clamped = clampValue(peRatio, min, max);
+    if (clamped === null || max === min) return null;
+    return ((max - clamped) / (max - min)) * 100;
+  })();
+
+  const psScore = (() => {
+    if (!Number.isFinite(psRatio) || psRatio <= 0) return null;
+    const min = 1;
+    const max = 12;
+    const clamped = clampValue(psRatio, min, max);
+    if (clamped === null || max === min) return null;
+    return ((max - clamped) / (max - min)) * 100;
+  })();
+
+  const upsideScore = (() => {
+    if (!Number.isFinite(upsidePct)) return null;
+    const min = -20;
+    const max = 40;
+    const clamped = clampValue(upsidePct, min, max);
+    if (clamped === null || max === min) return null;
+    return ((clamped - min) / (max - min)) * 100;
+  })();
+
+  const scoreCandidates = [peScore, psScore, upsideScore].filter((value) => Number.isFinite(value));
+  const aiScore = scoreCandidates.length
+    ? scoreCandidates.reduce((total, value) => total + value, 0) / scoreCandidates.length
+    : null;
+
+  const availableCount = [peRatio, psRatio, upsidePct].filter((value) => Number.isFinite(value)).length;
+
+  return {
+    peRatio,
+    psRatio,
+    upsidePct,
+    peScore,
+    psScore,
+    upsideScore,
+    aiScore,
+    availableCount,
+  };
+}
+
+function updateRadarChart(values = []) {
+  const canvas = document.getElementById('valuationRadarChart');
+  if (!canvas) return;
+  const datasetValues = radarLabels.map((_, index) => {
+    const value = values[index];
+    return Number.isFinite(value) ? value : 0;
+  });
+
+  if (!valuationRadarChart) {
+    valuationRadarChart = new Chart(canvas, {
+      type: 'radar',
+      data: {
+        labels: radarLabels,
+        datasets: [
+          {
+            data: datasetValues,
+            fill: true,
+            tension: 0.3,
+            backgroundColor: 'rgba(74, 215, 168, 0.18)',
+            borderColor: 'rgba(74, 215, 168, 0.65)',
+            borderWidth: 2,
+            pointBackgroundColor: 'rgba(74, 215, 168, 0.9)',
+            pointBorderColor: 'rgba(74, 215, 168, 0.9)',
+            pointRadius: 3,
+            pointHoverRadius: 4,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const label = context.label || '';
+                const value = Number.isFinite(context.parsed.r) ? context.parsed.r.toFixed(0) : '0';
+                return `${label}: ${value}`;
+              },
+            },
+          },
+        },
+        scales: {
+          r: {
+            suggestedMin: 0,
+            suggestedMax: 100,
+            beginAtZero: true,
+            ticks: {
+              display: false,
+            },
+            grid: {
+              color: 'rgba(255, 255, 255, 0.08)',
+            },
+            angleLines: {
+              color: 'rgba(255, 255, 255, 0.08)',
+            },
+            pointLabels: {
+              color: 'rgba(255, 255, 255, 0.7)',
+              font: {
+                size: 11,
+              },
+            },
+          },
+        },
+      },
+    });
+  } else {
+    valuationRadarChart.data.datasets[0].data = datasetValues;
+    valuationRadarChart.update();
+  }
+}
+
+function renderValuationRadar({ price, upside, fundamentals }) {
+  const metrics = computeRadarMetrics({ price, upside, fundamentals });
+  const { peRatio, psRatio, upsidePct, peScore, psScore, upsideScore, aiScore, availableCount } = metrics;
+
+  const peEl = document.getElementById('valuationPe');
+  if (peEl) peEl.textContent = fmtMultiple(peRatio);
+  const psEl = document.getElementById('valuationPs');
+  if (psEl) psEl.textContent = fmtMultiple(psRatio);
+  const upsideEl = document.getElementById('valuationUpsideMetric');
+  if (upsideEl) upsideEl.textContent = Number.isFinite(upsidePct) ? fmtPercent(upsidePct) : '—';
+
+  const inlineScore = document.getElementById('valuationAiScoreInline');
+  if (inlineScore) inlineScore.textContent = Number.isFinite(aiScore) ? `${Math.round(aiScore)}%` : '—';
+
+  const centerScore = document.getElementById('valuationAiScore');
+  if (centerScore) {
+    if (Number.isFinite(aiScore)) {
+      centerScore.textContent = Math.round(aiScore).toString();
+      centerScore.dataset.unit = 'percent';
+    } else {
+      centerScore.textContent = '—';
+      delete centerScore.dataset.unit;
+    }
+  }
+
+  setMetricBar('valuationPeBar', peScore);
+  setMetricBar('valuationPsBar', psScore);
+  setMetricBar('valuationUpsideBar', upsideScore);
+  setMetricBar('valuationScoreBar', aiScore);
+
+  const caption = document.getElementById('valuationRadarCaption');
+  if (caption) {
+    caption.textContent = availableCount
+      ? 'Normalized valuation signals (0-100, higher indicates stronger relative value).'
+      : 'Quant metrics awaiting Tiingo fundamentals.';
+  }
+
+  const container = document.getElementById('valuationRadar');
+  if (container) container.classList.toggle('is-empty', !availableCount);
+
+  updateRadarChart([peScore, psScore, upsideScore, aiScore]);
 }
 
 async function fetchIntel({ symbol, limit, timeframe }) {
@@ -67,7 +305,7 @@ async function fetchIntel({ symbol, limit, timeframe }) {
 }
 
 function updateValuationCard(valuationData = {}) {
-  const { price, fairValue, upside, entry, breakdown } = extractValuationMetrics(valuationData);
+  const { price, fairValue, upside, entry, breakdown, fundamentals } = extractValuationMetrics(valuationData);
 
   $('#valuationPrice').textContent = fmtCurrency(price);
   $('#valuationFair').textContent = fmtCurrency(fairValue);
@@ -84,6 +322,8 @@ function updateValuationCard(valuationData = {}) {
   $('#valuationBreakdown').textContent = items.length
     ? items.map(([label, value]) => `${label}: ${fmtCurrency(value)}`).join(' · ')
     : 'Awaiting valuation inputs from Tiingo fundamentals.';
+
+  renderValuationRadar({ price, upside, fundamentals });
 }
 
 function renderTimeline(timeline = []) {
@@ -449,7 +689,7 @@ async function runAnalysis() {
   setLoadingState(true);
   setStatus('Running ChatGPT‑5 analysis…', 'info');
   renderNarrative('', 'Processing latest Tiingo data…');
-  resetValuationCard('Crunching valuation components…');
+  resetValuationCard('Crunching valuation components…', 'Calibrating valuation radar…');
   showPlaceholderList('#timeline', 'Assembling event timeline…');
   showPlaceholderList('#documents', 'Retrieving regulatory documents…');
   showPlaceholderList('#newsList', 'Streaming latest news and sentiment…');
