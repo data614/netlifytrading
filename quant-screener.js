@@ -1,4 +1,5 @@
 import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
+import { computeRow, passesFilters, screenUniverse, suggestConcurrency } from './utils/quant-screener-core.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -96,78 +97,6 @@ function readFilters() {
     marketCapMax: maxCap !== null ? maxCap * 1_000_000_000 : null,
     sectors,
     batchCap,
-  };
-}
-
-function passesFilters(row, filters) {
-  const { minUpside, maxUpside, marketCapMin, marketCapMax, sectors } = filters;
-
-  if (minUpside !== null) {
-    if (!Number.isFinite(row.upside) || row.upside < minUpside) return false;
-  }
-
-  if (maxUpside !== null) {
-    if (!Number.isFinite(row.upside) || row.upside > maxUpside) return false;
-  }
-
-  if (marketCapMin !== null) {
-    if (!Number.isFinite(row.marketCap) || row.marketCap < marketCapMin) return false;
-  }
-
-  if (marketCapMax !== null) {
-    if (!Number.isFinite(row.marketCap) || row.marketCap > marketCapMax) return false;
-  }
-
-  if (sectors.length) {
-    const rowSector = (row.sector || '').toLowerCase();
-    if (!rowSector) return false;
-    const matches = sectors.some((sector) => rowSector.includes(sector));
-    if (!matches) return false;
-  }
-
-  return true;
-}
-
-function computeRow(symbol, data) {
-  const valuation = data?.valuation?.valuation || data?.valuation;
-  const valuationRoot = data?.valuation || {};
-  const overview = data?.overview || {};
-  const fundamentals = valuationRoot?.fundamentals || {};
-  const metrics = fundamentals?.metrics || {};
-  const price = valuationRoot?.price ?? valuation?.price ?? valuationRoot?.quote?.price;
-  const fairValue = valuation?.fairValue ?? null;
-  const upside = price && fairValue ? ((fairValue - price) / price) * 100 : null;
-  let marketCap = Number(overview.marketCap);
-  if (!Number.isFinite(marketCap)) {
-    const shares = Number(overview.sharesOutstanding ?? metrics.sharesOutstanding);
-    if (Number.isFinite(shares) && Number.isFinite(price)) {
-      marketCap = price * shares;
-    } else {
-      marketCap = null;
-    }
-  }
-  const sector = overview.sector || fundamentals.sector || fundamentals.profile?.sector || '';
-  const industry = overview.industry || fundamentals.industry || fundamentals.profile?.industry || '';
-  const momentum = (() => {
-    if (!Array.isArray(data?.trend) || data.trend.length < 2) return 0;
-    const first = Number(data.trend[0]?.close ?? data.trend[0]?.price);
-    const last = Number(data.trend[data.trend.length - 1]?.close ?? data.trend[data.trend.length - 1]?.price);
-    if (!Number.isFinite(first) || !Number.isFinite(last) || Math.abs(first) < 1e-6) return 0;
-    return ((last - first) / first) * 100;
-  })();
-  const remark = (data?.aiSummary || '').split('. ').slice(0, 2).join('. ');
-
-  return {
-    symbol,
-    sector,
-    industry,
-    price,
-    fairValue,
-    upside,
-    marketCap,
-    momentum,
-    summary: remark,
-    raw: data,
   };
 }
 
@@ -278,31 +207,50 @@ async function runScreen() {
   updateSummary([]);
   setStatus(`Screening ${universe.length} tickers using ChatGPT‑5…`, 'info');
 
-  for (const [index, symbol] of universe.entries()) {
-    try {
-      const { data } = await fetchIntel(symbol);
-      const row = computeRow(symbol, data);
+  const concurrency = suggestConcurrency(universe.length);
+
+  const { matches, processed, reachedCap } = await screenUniverse(universe, {
+    fetchIntel,
+    computeRow,
+    passesFilters: (row) => passesFilters(row, filters),
+    filters,
+    batchCap,
+    concurrency,
+    onItemComplete: ({
+      symbol,
+      row,
+      passes,
+      processedCount,
+      total: totalSymbols,
+      matchesCount,
+      reachedCap: capReached,
+    }) => {
       processedRows.push(row);
-      if (!passesFilters(row, filters)) {
-        setStatus(`Processed ${index + 1}/${universe.length}. ${symbol} filtered out by criteria.`, 'info');
-        continue;
+      if (!passes) {
+        setStatus(`Processed ${processedCount}/${totalSymbols}. ${symbol} filtered out by criteria.`, 'info');
+        return;
       }
+
       currentResults.push(row);
       const sorted = sortResults(currentResults, currentSort.key, currentSort.direction);
       renderTable(sorted);
       updateSummary(sorted);
       renderHeatmap(sorted);
-      setStatus(`Processed ${index + 1}/${universe.length}. ${currentResults.length} matches so far.`, 'info');
-      if (currentResults.length >= batchCap) {
+      if (capReached) {
         setStatus(`Reached batch cap of ${batchCap} tickers.`, 'success');
-        break;
+      } else {
+        setStatus(`Processed ${processedCount}/${totalSymbols}. ${matchesCount} matches so far.`, 'info');
       }
-    } catch (error) {
+    },
+    onError: ({ symbol, error, processedCount, total: totalSymbols }) => {
       console.error(error);
-      setStatus(`Error processing ${symbol}: ${error.message}`, 'error');
-    }
-  }
+      const message = error?.message || 'Unknown error';
+      setStatus(`Error processing ${symbol} (${processedCount}/${totalSymbols}): ${message}`, 'error');
+    },
+  });
 
+  processedRows = processed;
+  currentResults = matches;
   isScreening = false;
 
   applyFilters({ silent: true });
