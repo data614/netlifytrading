@@ -8,6 +8,7 @@
     "start": "npx netlify-cli@latest dev",
     "generate:symbols": "node scripts/build-symbols.mjs",
     "peer-review:inventory": "node scripts/peer-review/generate-file-inventory.mjs",
+    "qa:conflicts": "node scripts/qa/check-merge-conflicts.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
