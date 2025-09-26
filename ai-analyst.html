@@ -70,6 +70,54 @@
             <span class="value" id="valuationEntry">—</span>
           </div>
         </div>
+        <div class="valuation-radar" id="valuationRadar">
+          <div class="radar-wrapper">
+            <canvas id="valuationRadarChart"></canvas>
+            <div class="radar-center">
+              <span class="radar-center-label">AI composite</span>
+              <span class="radar-center-score" id="valuationAiScore">—</span>
+            </div>
+          </div>
+          <ul class="radar-metrics">
+            <li class="radar-metric">
+              <div class="metric-header">
+                <span class="metric-label">P/E ratio</span>
+                <span class="metric-value" id="valuationPe">—</span>
+              </div>
+              <div class="metric-bar">
+                <span class="metric-fill" id="valuationPeBar"></span>
+              </div>
+            </li>
+            <li class="radar-metric">
+              <div class="metric-header">
+                <span class="metric-label">P/S ratio</span>
+                <span class="metric-value" id="valuationPs">—</span>
+              </div>
+              <div class="metric-bar">
+                <span class="metric-fill" id="valuationPsBar"></span>
+              </div>
+            </li>
+            <li class="radar-metric">
+              <div class="metric-header">
+                <span class="metric-label">Analyst upside</span>
+                <span class="metric-value" id="valuationUpsideMetric">—</span>
+              </div>
+              <div class="metric-bar">
+                <span class="metric-fill" id="valuationUpsideBar"></span>
+              </div>
+            </li>
+            <li class="radar-metric">
+              <div class="metric-header">
+                <span class="metric-label">AI score</span>
+                <span class="metric-value" id="valuationAiScoreInline">—</span>
+              </div>
+              <div class="metric-bar">
+                <span class="metric-fill" id="valuationScoreBar"></span>
+              </div>
+            </li>
+          </ul>
+          <p class="radar-caption" id="valuationRadarCaption">Quant metrics awaiting Tiingo fundamentals.</p>
+        </div>
         <div class="valuation-breakdown" id="valuationBreakdown"></div>
       </div>
     </section>
