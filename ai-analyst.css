@@ -160,10 +160,22 @@ body {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+  box-shadow: none;
+}
+
 .btn.primary {
   background: linear-gradient(135deg, var(--primary), #5cf0bd);
   color: var(--bg);
   box-shadow: 0 12px 25px rgba(74, 215, 168, 0.2);
+}
+
+.btn.primary:disabled {
+  background: linear-gradient(135deg, rgba(74, 215, 168, 0.45), rgba(92, 240, 189, 0.45));
+  color: rgba(11, 23, 37, 0.7);
 }
 
 .btn.ghost {
@@ -193,6 +205,40 @@ body {
 
 .status-message.success {
   color: var(--primary);
+}
+
+.loading-strip {
+  display: none;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.loading-strip.active {
+  display: flex;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(74, 215, 168, 0.25);
+  border-top-color: var(--primary);
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.btn .spinner {
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .valuation-grid {
@@ -227,11 +273,49 @@ body {
   color: var(--muted);
 }
 
+.ai-narrative-panel {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-height: 120px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ai-narrative-panel.loading {
+  border-color: rgba(74, 215, 168, 0.35);
+  box-shadow: 0 0 0 1px rgba(74, 215, 168, 0.18);
+}
+
 .ai-summary {
   font-size: 1rem;
   line-height: 1.7;
-  color: rgba(255, 255, 255, 0.85);
-  white-space: pre-line;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.ai-summary.placeholder {
+  color: var(--muted);
+}
+
+.placeholder-item {
+  padding: 0.9rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.timeline .placeholder-item {
+  display: block;
+  grid-column: span 2;
+}
+
+.document-list .placeholder-item,
+.news-list .placeholder-item {
+  list-style: none;
 }
 
 .chip {
