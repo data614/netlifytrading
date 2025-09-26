@@ -1,3 +1,5 @@
+import { createCache } from './lib/cache.js';
+
 const corsHeaders = { 'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*' };
 
 const hoursAgo = (hours) => new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
@@ -66,6 +68,8 @@ let cachedArticles = {
   ]),
 };
 
+const newsCache = createCache({ ttl: 5 * 60 * 1000, maxEntries: 12 });
+
 const SOURCE_CONFIG = {
   All: { domains: 'bloomberg.com,reuters.com,finance.yahoo.com', query: 'stocks OR markets' },
   Bloomberg: { domains: 'bloomberg.com', query: 'stocks OR markets' },
@@ -76,7 +80,7 @@ const SOURCE_CONFIG = {
 const buildResponse = (source, articles, extra = {}) =>
   Response.json(
     { source, articles, ...extra },
-    { headers: { ...corsHeaders, 'cache-control': 'no-store' } }
+    { headers: { ...corsHeaders, 'cache-control': 'public, max-age=120, s-maxage=300' } }
   );
 
 const fallbackResponse = (source, extra = {}) =>
@@ -93,10 +97,16 @@ export default async (request) => {
   const url = new URL(request.url);
   const rawSource = url.searchParams.get('source') || 'All';
   const source = SOURCE_CONFIG[rawSource] ? rawSource : 'All';
+  const cacheKey = source;
 
   const apiKey = process.env.NEWS_API_KEY;
   if (!apiKey) {
     return fallbackResponse(source, { warning: 'NEWS_API_KEY not configured' });
+  }
+
+  const cached = newsCache.get(cacheKey);
+  if (cached) {
+    return buildResponse(source, cached.articles, { fromCache: true, fetchedAt: cached.fetchedAt });
   }
 
   try {
@@ -108,28 +118,42 @@ export default async (request) => {
     apiUrl.searchParams.set('q', query || 'markets');
     if (domains) apiUrl.searchParams.set('domains', domains);
 
-    const response = await fetch(apiUrl, {
-      headers: { 'X-Api-Key': apiKey },
-    });
+    const payload = await newsCache.resolve(
+      cacheKey,
+      async () => {
+        const response = await fetch(apiUrl, {
+          headers: { 'X-Api-Key': apiKey },
+        });
 
-    if (!response.ok) {
-      throw new Error(`Upstream error ${response.status}`);
-    }
+        if (!response.ok) {
+          throw new Error(`Upstream error ${response.status}`);
+        }
 
-    const payload = await response.json();
-    if (!payload || !Array.isArray(payload.articles)) {
-      throw new Error('Malformed news payload');
-    }
+        const result = await response.json();
+        if (!result || !Array.isArray(result.articles)) {
+          throw new Error('Malformed news payload');
+        }
 
-    const articles = payload.articles
-      .filter((article) => article && article.title && article.url)
-      .map((article) => ({
-        title: article.title,
-        url: article.url,
-        source: article.source?.name || source,
-        publishedAt: article.publishedAt || new Date().toISOString(),
-        description: article.description || '',
-      }));
+        const articles = result.articles
+          .filter((article) => article && article.title && article.url)
+          .map((article) => ({
+            title: article.title,
+            url: article.url,
+            source: article.source?.name || source,
+            publishedAt: article.publishedAt || new Date().toISOString(),
+            description: article.description || '',
+          }));
+
+        if (!articles.length) {
+          throw new Error('No articles returned');
+        }
+
+        return { articles, fetchedAt: new Date().toISOString() };
+      },
+      5 * 60 * 1000,
+    );
+
+    const articles = Array.isArray(payload?.articles) ? payload.articles : [];
 
     if (!articles.length) {
       throw new Error('No articles returned');
@@ -140,9 +164,18 @@ export default async (request) => {
       cachedArticles.All = articles;
     }
 
-    return buildResponse(source, articles, { fetchedAt: new Date().toISOString() });
+    return buildResponse(source, articles, { fetchedAt: payload.fetchedAt || new Date().toISOString() });
   } catch (error) {
     console.error('news function error', error);
+    const cachedFallback = newsCache.get(cacheKey);
+    if (cachedFallback) {
+      return buildResponse(source, cachedFallback.articles, {
+        fromCache: true,
+        fetchedAt: cachedFallback.fetchedAt,
+        error: 'news fetch failed',
+        detail: String(error),
+      });
+    }
     return fallbackResponse(source, { error: 'news fetch failed', detail: String(error) });
   }
 };
