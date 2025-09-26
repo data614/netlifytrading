@@ -1,4 +1,5 @@
 import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
+import { createScreenPreferenceStore } from './utils/persistent-screen-preferences.js';
 import { computeRow, passesFilters, screenUniverse, suggestConcurrency } from './utils/quant-screener-core.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -67,12 +68,29 @@ function computeHeatColor(value, min, max) {
 }
 
 const defaultUniverse = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'NFLX'];
+const DEFAULT_SORT = Object.freeze({ key: 'upside', direction: 'desc' });
+const DEFAULT_FILTER_INPUTS = Object.freeze({
+  minUpside: '5',
+  maxUpside: '',
+  marketCapMin: '',
+  marketCapMax: '',
+  sectors: '',
+  batchCap: '6',
+});
 
 let currentResults = [];
 let processedRows = [];
-let currentSort = { key: 'upside', direction: 'desc' };
+let currentSort = { ...DEFAULT_SORT };
 let isScreening = false;
 let visibleRows = [];
+
+const preferenceStore = createScreenPreferenceStore({
+  defaults: {
+    universe: defaultUniverse.join(', '),
+    filters: { ...DEFAULT_FILTER_INPUTS },
+    sort: DEFAULT_SORT,
+  },
+});
 
 async function fetchIntel(symbol) {
   const url = new URL('/api/aiAnalyst', window.location.origin);
@@ -139,6 +157,74 @@ function readFilters() {
     sectors,
     batchCap,
   };
+}
+
+const readInputValue = (selector, fallback = '') => {
+  const el = $(selector);
+  if (!el) return fallback;
+  return el.value ?? fallback;
+};
+
+const toInputString = (value) => {
+  if (value === undefined || value === null) return '';
+  return String(value);
+};
+
+function captureFormState() {
+  return {
+    universe: readInputValue('#universeInput'),
+    filters: {
+      minUpside: readInputValue('#upsideFilter'),
+      maxUpside: readInputValue('#upsideMaxFilter'),
+      marketCapMin: readInputValue('#marketCapMin'),
+      marketCapMax: readInputValue('#marketCapMax'),
+      sectors: readInputValue('#sectorFilter'),
+      batchCap: readInputValue('#batchSize'),
+    },
+    sort: { ...currentSort },
+  };
+}
+
+function persistPreferences(partial = {}) {
+  const snapshot = captureFormState();
+  const payload = {
+    ...snapshot,
+    ...partial,
+    filters: { ...snapshot.filters, ...(partial.filters || {}) },
+    sort: { ...snapshot.sort, ...(partial.sort || {}) },
+  };
+  preferenceStore.merge(payload);
+}
+
+function applySavedPreferences() {
+  const saved = preferenceStore.load();
+  const filters = saved.filters || {};
+  const assign = (selector, value, fallback = '') => {
+    const el = $(selector);
+    if (!el) return;
+    const resolved = value === undefined ? fallback : value;
+    el.value = toInputString(resolved);
+  };
+
+  assign('#universeInput', saved.universe, defaultUniverse.join(', '));
+  assign('#upsideFilter', filters.minUpside, DEFAULT_FILTER_INPUTS.minUpside);
+  assign('#upsideMaxFilter', filters.maxUpside, DEFAULT_FILTER_INPUTS.maxUpside);
+  assign('#marketCapMin', filters.marketCapMin, DEFAULT_FILTER_INPUTS.marketCapMin);
+  assign('#marketCapMax', filters.marketCapMax, DEFAULT_FILTER_INPUTS.marketCapMax);
+  assign('#sectorFilter', filters.sectors, DEFAULT_FILTER_INPUTS.sectors);
+  assign('#batchSize', filters.batchCap, DEFAULT_FILTER_INPUTS.batchCap);
+
+  const sort = saved.sort || {};
+  if (sort.key) {
+    currentSort = {
+      key: sort.key,
+      direction: sort.direction === 'asc' ? 'asc' : 'desc',
+    };
+  } else {
+    currentSort = { ...DEFAULT_SORT };
+  }
+
+  return saved;
 }
 
 function renderHeatmap(rows) {
@@ -302,7 +388,10 @@ async function runScreen() {
   updateSummary([]);
   setStatus(`Screening ${universe.length} tickers using ChatGPT‑5…`, 'info');
 
+  persistPreferences();
+
   const concurrency = suggestConcurrency(universe.length);
+  const startTime = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
 
   const { matches, processed, reachedCap } = await screenUniverse(universe, {
     fetchIntel,
@@ -351,6 +440,18 @@ async function runScreen() {
   applyFilters({ silent: true });
   const latestFilters = readFilters();
 
+  const finishedTime = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+  const durationMs = finishedTime - startTime;
+  persistPreferences({
+    lastRun: {
+      timestamp: Date.now(),
+      universeCount: universe.length,
+      matchesCount: currentResults.length,
+      reachedCap,
+      durationMs: Number.isFinite(durationMs) ? Math.round(durationMs) : null,
+    },
+  });
+
   if (!currentResults.length) {
     renderHeatmap([]);
     updateSummary([]);
@@ -379,6 +480,7 @@ function attachSortHandlers() {
       renderTable(sorted);
       updateSummary(sorted);
       renderHeatmap(sorted);
+      persistPreferences({ sort: currentSort });
     });
   });
 }
@@ -389,6 +491,7 @@ function registerFilterControls() {
     const el = $(selector);
     if (!el) return;
     el.addEventListener('change', () => {
+      persistPreferences();
       if (isScreening || !processedRows.length) return;
       applyFilters();
     });
@@ -396,12 +499,15 @@ function registerFilterControls() {
 
   const sectorInput = $('#sectorFilter');
   if (sectorInput) {
-    const trigger = (silent) => {
+    sectorInput.addEventListener('change', () => {
+      persistPreferences();
       if (isScreening || !processedRows.length) return;
-      applyFilters({ silent });
-    };
-    sectorInput.addEventListener('change', () => trigger(false));
-    sectorInput.addEventListener('input', () => trigger(true));
+      applyFilters();
+    });
+    sectorInput.addEventListener('input', () => {
+      if (isScreening || !processedRows.length) return;
+      applyFilters({ silent: true });
+    });
   }
 }
 
@@ -436,15 +542,21 @@ function downloadCsv() {
 }
 
 function init() {
-  $('#universeInput').value = defaultUniverse.join(', ');
+  applySavedPreferences();
   $('#runScreen').addEventListener('click', () => {
     runScreen();
   });
   $('#downloadCsv').addEventListener('click', () => downloadCsv());
   attachSortHandlers();
   registerFilterControls();
+  const universeInput = $('#universeInput');
+  if (universeInput) {
+    universeInput.addEventListener('change', () => persistPreferences());
+    universeInput.addEventListener('blur', () => persistPreferences());
+  }
   renderHeatmap([]);
   updateSummary([]);
+  persistPreferences();
 }
 
 document.addEventListener('DOMContentLoaded', init);
