@@ -1,6 +1,7 @@
 import { createRenderQueue, createRequestCache } from './utils/browser-cache.js';
 import { enrichError, getFriendlyErrorMessage } from './utils/frontend-errors.js';
 import { loadPreferences, updatePreferences } from './utils/user-preferences.js';
+import { createLatestPromiseRunner, createOperationTokenSource } from './utils/task-guards.js';
 
 const createMemoryStorage = () => {
   const store = new Map();
@@ -94,6 +95,14 @@ const scheduleMoversRender = createRenderQueue();
 const scheduleNewsRender = createRenderQueue();
 const scheduleSearchRender = createRenderQueue();
 const scheduleEventFeedRender = createRenderQueue();
+
+const runLatestTimeframeTask = createLatestPromiseRunner();
+const runLatestEventFeedTask = createLatestPromiseRunner();
+const runLatestNewsTask = createLatestPromiseRunner();
+
+const timeframeLoadTokens = createOperationTokenSource();
+const eventFeedLoadTokens = createOperationTokenSource();
+const newsLoadTokens = createOperationTokenSource();
 
 const timeLabelFormatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 const dateLabelFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
@@ -718,8 +727,10 @@ async function loadNews(source = 'All') {
   const feed = $('news-feed');
   if (!feed) return;
   const cacheKey = `news:${source}`;
+  const requestToken = newsLoadTokens.next();
   const cached = newsRequestCache.get(cacheKey);
   if (cached && Array.isArray(cached.articles)) {
+    if (!newsLoadTokens.isCurrent(requestToken)) return;
     renderNewsArticles(feed, cached.articles, source);
     return;
   }
@@ -733,28 +744,32 @@ async function loadNews(source = 'All') {
   feed.innerHTML = '<div class="muted">Loading news…</div>';
 
   try {
-    const payload = await newsRequestCache.resolve(cacheKey, async () => {
-      const resp = await fetch(`${API}/news?source=${encodeURIComponent(source)}`, {
-        headers: { accept: 'application/json' },
-        signal: controller.signal,
-      });
-      const body = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        throw new Error(body?.error || resp.statusText);
-      }
-      const articles = Array.isArray(body?.articles) ? body.articles : [];
-      return { articles };
-    }, 3 * 60 * 1000);
-    if (controller.signal.aborted) return;
-    renderNewsArticles(feed, payload.articles || [], source);
+    const { cancelled, result: payload } = await runLatestNewsTask(async () => {
+      const response = await newsRequestCache.resolve(cacheKey, async () => {
+        const resp = await fetch(`${API}/news?source=${encodeURIComponent(source)}`, {
+          headers: { accept: 'application/json' },
+          signal: controller.signal,
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(body?.error || resp.statusText);
+        }
+        const articles = Array.isArray(body?.articles) ? body.articles : [];
+        return { articles };
+      }, 3 * 60 * 1000);
+      return response;
+    });
+    if (!newsLoadTokens.isCurrent(requestToken) || controller.signal.aborted || cancelled) return;
+    const safePayload = payload || { articles: [] };
+    renderNewsArticles(feed, safePayload.articles || [], source);
   } catch (err) {
-    if (controller.signal.aborted) return;
+    if (!newsLoadTokens.isCurrent(requestToken) || controller.signal.aborted) return;
     scheduleNewsRender(() => {
       feed.innerHTML = `<div class="muted">News unavailable. ${err.message || err}</div>`;
     });
     newsRequestCache.delete(cacheKey);
   } finally {
-    if (newsAbortController === controller) {
+    if (newsLoadTokens.isCurrent(requestToken) && newsAbortController === controller) {
       newsAbortController = null;
     }
   }
@@ -1060,11 +1075,12 @@ async function loadEventFeed(symbol) {
   if (!container) return;
   const target = String(symbol || '').toUpperCase() || 'AAPL';
   eventFeedSymbolInFlight = target;
+  const requestToken = eventFeedLoadTokens.next();
 
   const cacheKey = `events:${target}`;
   const cached = eventFeedCache.get(cacheKey);
   if (cached) {
-    if (eventFeedSymbolInFlight !== target) return;
+    if (!eventFeedLoadTokens.isCurrent(requestToken) || eventFeedSymbolInFlight !== target) return;
     renderEventFeed(container, cached.items, cached.status);
     updateEventFeedBadge(cached.status);
     return;
@@ -1076,7 +1092,7 @@ async function loadEventFeed(symbol) {
   });
 
   try {
-    const payload = await eventFeedCache.resolve(
+    const { cancelled, result: payload } = await runLatestEventFeedTask(async () => eventFeedCache.resolve(
       cacheKey,
       async () => {
         const [newsRes, docsRes, actionsRes] = await Promise.all([
@@ -1152,14 +1168,14 @@ async function loadEventFeed(symbol) {
         return { items: limited, status };
       },
       3 * 60 * 1000,
-    );
+    ));
 
-    if (eventFeedSymbolInFlight !== target) return;
+    if (!eventFeedLoadTokens.isCurrent(requestToken) || cancelled || eventFeedSymbolInFlight !== target) return;
     const data = payload || { items: [], status: {} };
     renderEventFeed(container, data.items, data.status);
     updateEventFeedBadge(data.status);
   } catch (error) {
-    if (eventFeedSymbolInFlight !== target) return;
+    if (!eventFeedLoadTokens.isCurrent(requestToken) || eventFeedSymbolInFlight !== target) return;
     console.warn('Failed to load event feed', error);
     eventFeedCache.delete(cacheKey);
     const status = summariseEventStatus([], [], ['Events unavailable.'], 0);
@@ -1896,38 +1912,59 @@ async function loadTimeframe(tf, { force = false } = {}) {
   if (!tf) return;
   const target = String(tf).toUpperCase();
   const sameTimeframe = target === currentTimeframe;
-  const symbolChanged = currentSymbol !== lastChartSymbol;
+  const symbolForRequest = currentSymbol;
+  const symbolChanged = symbolForRequest !== lastChartSymbol;
   if (!force && sameTimeframe && priceChart && !symbolChanged) {
     updateTimeframeButtons(target);
     return;
   }
-  if (timeframeLoading) return;
+
+  const requestToken = timeframeLoadTokens.next();
   timeframeLoading = true;
   currentTimeframe = target;
   updateTimeframeButtons(target);
   applyPreferenceUpdate({ timeframe: currentTimeframe });
+
   try {
-    const { intraday, interval, limit } = tfParams(target);
-    const params = intraday
-      ? { symbol: currentSymbol, kind: 'intraday', interval, limit }
-      : { symbol: currentSymbol, kind: 'eod', limit };
-    const eventsPromise = loadChartEventsForSymbol(currentSymbol);
-    const res = await callTiingo(params);
-    const rows = Array.isArray(res?.data)
-      ? res.data.slice().sort((a, b) => new Date(a.date) - new Date(b.date))
-      : [];
+    const { cancelled, result: payload } = await runLatestTimeframeTask(async () => {
+      const { intraday, interval, limit } = tfParams(target);
+      const params = intraday
+        ? { symbol: symbolForRequest, kind: 'intraday', interval, limit }
+        : { symbol: symbolForRequest, kind: 'eod', limit };
+      const eventsPromise = loadChartEventsForSymbol(symbolForRequest);
+      const res = await callTiingo(params);
+      const rows = Array.isArray(res?.data)
+        ? res.data.slice().sort((a, b) => new Date(a.date) - new Date(b.date))
+        : [];
+      const events = await eventsPromise;
+      return {
+        rows,
+        intraday,
+        events,
+        meta: res?.meta,
+        warning: res?.warning,
+      };
+    });
+
+    if (!timeframeLoadTokens.isCurrent(requestToken) || cancelled) return;
+
+    const { rows = [], intraday, events = [], meta = null, warning = '' } = payload || {};
     if (!rows.length) {
       showError('No data returned.');
-      updateChartStatus(res?.meta || {}, res?.warning || 'No data returned', 0);
+      updateChartStatus(meta || {}, warning || 'No data returned', 0);
       return;
     }
-    const events = await eventsPromise;
     renderChart(rows, intraday, events);
-    updateChartStatus(res?.meta || {}, res?.warning || '', rows.length);
-    if (res?.meta) updateApiBadge(res.meta);
-    lastChartSymbol = currentSymbol;
+    updateChartStatus(meta || {}, warning || '', rows.length);
+    if (meta) updateApiBadge(meta);
+    lastChartSymbol = symbolForRequest;
+  } catch (error) {
+    if (!timeframeLoadTokens.isCurrent(requestToken)) return;
+    throw error;
   } finally {
-    timeframeLoading = false;
+    if (timeframeLoadTokens.isCurrent(requestToken)) {
+      timeframeLoading = false;
+    }
   }
 }
 
