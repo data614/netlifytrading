@@ -30,11 +30,194 @@ let valuationRadarChart;
 let heatmapChart;
 let lastAnalysis = null;
 let runButtonDefaultHtml = '';
+let refreshButtonDefaultHtml = '';
+let analysisInFlight = false;
 
 const fmtMultiple = (value) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return '—';
   return `${num.toFixed(1)}×`;
+};
+
+const humanizeLabel = (value = '') =>
+  value
+    .toString()
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const setElementText = (id, text) => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.textContent = text;
+  }
+};
+
+const setMetricBar = (id, score) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (Number.isFinite(score)) {
+    el.style.width = `${Math.max(0, Math.min(100, Math.round(score)))}%`;
+    el.setAttribute('aria-valuenow', String(Math.round(score)));
+  } else {
+    el.style.width = '0%';
+    el.setAttribute('aria-valuenow', '0');
+  }
+};
+
+const buttonSpinnerHtml = (label) =>
+  `<span class="spinner" aria-hidden="true"></span><span>${label}</span>`;
+
+const setButtonLoading = (button, defaultHtml, isLoading, loadingLabel) => {
+  if (!button) return;
+  if (isLoading) {
+    button.disabled = true;
+    button.innerHTML = buttonSpinnerHtml(loadingLabel);
+  } else {
+    button.disabled = false;
+    button.innerHTML = defaultHtml;
+  }
+};
+
+const describeCompositeCaption = (availableCount) => {
+  if (!Number.isFinite(availableCount) || availableCount <= 0) {
+    return 'AI valuation metrics are waiting on fresh fundamentals data.';
+  }
+  if (availableCount < 3) {
+    return 'AI composite score is blending the metrics currently available.';
+  }
+  return 'AI composite score blends valuation multiples and upside factors.';
+};
+
+const renderValuationBreakdown = (breakdown) => {
+  const container = document.getElementById('valuationBreakdown');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  const isObject = breakdown && typeof breakdown === 'object';
+  const entries = isObject ? Object.entries(breakdown) : [];
+
+  if (!entries.length) {
+    const fallback = document.createElement('p');
+    fallback.className = 'valuation-breakdown-empty';
+    fallback.textContent = 'Valuation breakdown will appear once AI valuation data refreshes.';
+    container.appendChild(fallback);
+    return;
+  }
+
+  entries.forEach(([rawKey, rawValue]) => {
+    const label = typeof rawValue?.label === 'string' && rawValue.label.trim()
+      ? rawValue.label.trim()
+      : humanizeLabel(rawKey);
+
+    const row = document.createElement('div');
+    row.className = 'valuation-breakdown-line';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'valuation-breakdown-label';
+    labelEl.textContent = label;
+    row.appendChild(labelEl);
+
+    const descriptionParts = [];
+
+    if (rawValue && typeof rawValue === 'object') {
+      if (typeof rawValue.description === 'string' && rawValue.description.trim()) {
+        descriptionParts.push(rawValue.description.trim());
+      }
+
+      if (isFiniteNumber(rawValue.score)) {
+        descriptionParts.push(`Score ${Math.round(Number(rawValue.score))}`);
+      }
+
+      if (isFiniteNumber(rawValue.weight)) {
+        descriptionParts.push(`Weight ${(Number(rawValue.weight) * 100).toFixed(0)}%`);
+      }
+
+      const contribution = rawValue.contribution ?? rawValue.value ?? null;
+      if (isFiniteNumber(contribution)) {
+        descriptionParts.push(`Value ${Number(contribution).toFixed(2)}`);
+      }
+
+      if (isFiniteNumber(rawValue.ratio)) {
+        descriptionParts.push(`Ratio ${Number(rawValue.ratio).toFixed(2)}`);
+      }
+    } else if (isFiniteNumber(rawValue)) {
+      descriptionParts.push(Number(rawValue).toFixed(2));
+    } else if (typeof rawValue === 'string') {
+      descriptionParts.push(rawValue.trim());
+    }
+
+    if (!descriptionParts.length) {
+      descriptionParts.push('Data pending');
+    }
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'valuation-breakdown-meta';
+    metaEl.textContent = descriptionParts.join(' • ');
+    row.appendChild(metaEl);
+
+    container.appendChild(row);
+  });
+};
+
+const renderValuationPanel = (valuationRoot = {}) => {
+  const { price, fairValue, upside, entry, breakdown, fundamentals } = extractValuationMetrics(valuationRoot);
+
+  setElementText('valuationPrice', fmtCurrency(price));
+  setElementText('valuationFair', fmtCurrency(fairValue));
+  setElementText('valuationUpside', Number.isFinite(upside) ? fmtPercent(upside * 100) : '—');
+  setElementText('valuationEntry', fmtCurrency(entry));
+
+  const scores = computeValuationScores({ price, upside, fundamentals });
+
+  const peRatio = scores.pe?.ratio;
+  const psRatio = scores.ps?.ratio;
+  const upsidePercent = scores.upside?.percent;
+  const compositeScore = scores.composite?.score;
+  const availableCount = scores.composite?.availableCount ?? 0;
+
+  setElementText('valuationPe', Number.isFinite(peRatio) ? fmtMultiple(peRatio) : '—');
+  setElementText('valuationPs', Number.isFinite(psRatio) ? fmtMultiple(psRatio) : '—');
+  setElementText('valuationUpsideMetric', Number.isFinite(upsidePercent) ? fmtPercent(upsidePercent) : '—');
+
+  const aiScoreLabel = Number.isFinite(compositeScore) ? Math.round(Number(compositeScore)).toString() : '—';
+  setElementText('valuationAiScore', aiScoreLabel);
+  setElementText('valuationAiScoreInline', aiScoreLabel);
+
+  setMetricBar('valuationPeBar', scores.pe?.score);
+  setMetricBar('valuationPsBar', scores.ps?.score);
+  setMetricBar('valuationUpsideBar', scores.upside?.score);
+  setMetricBar('valuationScoreBar', compositeScore);
+
+  updateRadarChart([
+    scores.pe?.score,
+    scores.ps?.score,
+    scores.upside?.score,
+    compositeScore,
+  ]);
+
+  setElementText('valuationRadarCaption', describeCompositeCaption(availableCount));
+  renderValuationBreakdown(breakdown);
+};
+
+const toggleAnalysisLoading = ({ isLoading, forceRefresh }) => {
+  const runButton = $('#runAnalysis');
+  const refreshButton = $('#refreshValuation');
+
+  if (forceRefresh) {
+    setButtonLoading(refreshButton, refreshButtonDefaultHtml, isLoading, 'Refreshing…');
+    if (runButton) {
+      runButton.disabled = isLoading;
+    }
+  } else {
+    setButtonLoading(runButton, runButtonDefaultHtml, isLoading, 'Running…');
+    if (refreshButton) {
+      refreshButton.disabled = isLoading;
+    }
+  }
 };
 
 /* -----------------------------
@@ -182,16 +365,24 @@ function downloadCsv(symbol, data) {
    Intel Fetcher
 ------------------------------ */
 
-async function fetchIntel({ symbol, limit, timeframe }) {
+async function fetchIntel({ symbol, limit, timeframe, forceRefresh = false }) {
   const url = new URL('/.netlify/functions/ai-analyst', window.location.origin);
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('limit', limit);
   url.searchParams.set('timeframe', timeframe);
   url.searchParams.set('newsLimit', 12);
   url.searchParams.set('documentLimit', 12);
+  if (forceRefresh) {
+    url.searchParams.set('refreshTs', Date.now().toString());
+    url.searchParams.set('forceRefresh', '1');
+  }
 
   try {
-    const response = await fetch(url, { headers: { accept: 'application/json' } });
+    const fetchOptions = {
+      headers: { accept: 'application/json', 'cache-control': 'no-cache' },
+      cache: forceRefresh ? 'reload' : 'default',
+    };
+    const response = await fetch(url, fetchOptions);
     if (!response.ok) throw new Error(`AI Analyst request failed (${response.status})`);
     const body = await response.json();
     const warningHeader = response.headers.get('x-ai-analyst-warning') || '';
@@ -208,23 +399,32 @@ async function fetchIntel({ symbol, limit, timeframe }) {
    Analysis Runner
 ------------------------------ */
 
-async function runAnalysis() {
+async function runAnalysis(options = {}) {
+  const { forceRefresh = false } = options;
+  if (analysisInFlight) return;
+
   const symbol = ($('#tickerInput').value || 'AAPL').trim().toUpperCase();
   const limit = Number($('#lookbackInput').value) || 120;
   const timeframe = $('#timeframeSelect').value || '3M';
 
+  analysisInFlight = true;
   lastAnalysis = null;
-  setStatus('Running analysis…');
+  toggleAnalysisLoading({ isLoading: true, forceRefresh });
+  setStatus(forceRefresh ? 'Refreshing valuation…' : 'Running analysis…');
 
   try {
-    const { data } = await fetchIntel({ symbol, limit, timeframe });
+    const { data, warning } = await fetchIntel({ symbol, limit, timeframe, forceRefresh });
     renderHeatmap(data?.heatmap || []); // 👈 heatmap support
-    updateRadarChart([10, 20, 40, 80]); // sample radar data
-    lastAnalysis = { symbol, limit, timeframe, data };
-    setStatus('Analysis completed.');
+    renderValuationPanel(data?.valuation || {});
+    lastAnalysis = { symbol, limit, timeframe, data, warning };
+    const message = warning || (forceRefresh ? 'Valuation refreshed.' : 'Analysis completed.');
+    setStatus(message, warning ? 'info' : 'success');
   } catch (err) {
     console.error(err);
     setStatus(err.message, 'error');
+  } finally {
+    analysisInFlight = false;
+    toggleAnalysisLoading({ isLoading: false, forceRefresh });
   }
 }
 
@@ -233,7 +433,19 @@ async function runAnalysis() {
 ------------------------------ */
 
 function init() {
-  $('#runAnalysis')?.addEventListener('click', runAnalysis);
+  const runButton = $('#runAnalysis');
+  const refreshButton = $('#refreshValuation');
+
+  if (runButton) {
+    runButtonDefaultHtml = runButton.innerHTML;
+    runButton.addEventListener('click', () => runAnalysis({ forceRefresh: false }));
+  }
+
+  if (refreshButton) {
+    refreshButtonDefaultHtml = refreshButton.innerHTML;
+    refreshButton.addEventListener('click', () => runAnalysis({ forceRefresh: true }));
+  }
+
   $('#exportReport')?.addEventListener('click', () => {
     if (!lastAnalysis) return;
     downloadCsv(lastAnalysis.symbol, lastAnalysis.data);
@@ -241,7 +453,9 @@ function init() {
   runAnalysis();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', init);
+}
 
 /* -----------------------------
    Status Helper

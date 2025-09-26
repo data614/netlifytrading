@@ -289,6 +289,31 @@ body {
   color: var(--muted);
 }
 
+.valuation-actions {
+  justify-content: flex-start;
+  margin-top: 1.2rem;
+}
+
+.valuation-breakdown-empty {
+  margin-top: 0.4rem;
+}
+
+.valuation-breakdown-line {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.6rem;
+}
+
+.valuation-breakdown-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.valuation-breakdown-meta {
+  color: var(--muted);
+}
+
 .market-radar {
   display: flex;
   flex-direction: column;
