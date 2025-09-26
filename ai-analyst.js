@@ -1,4 +1,5 @@
 import { computeValuationScores, VALUATION_RADAR_LABELS } from './utils/valuation-scorer.js';
+import { enrichError } from './utils/frontend-errors.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -234,12 +235,40 @@ async function fetchIntel({ symbol, limit, timeframe }) {
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('limit', limit);
   url.searchParams.set('timeframe', timeframe);
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || response.statusText);
+
+  try {
+    const response = await fetch(url, { headers: { accept: 'application/json' } });
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+
+    if (!response.ok) {
+      let payload = null;
+      let text = '';
+      if (contentType.includes('application/json')) {
+        payload = await response.json().catch(() => null);
+      } else {
+        text = await response.text().catch(() => '');
+      }
+
+      const rawMessage = payload?.error || payload?.message || payload?.detail || text || response.statusText;
+      const error = new Error(rawMessage || 'AI Analyst request failed.');
+      error.status = response.status;
+      if (payload) {
+        error.response = payload;
+        error.detail = payload?.detail || payload?.error || payload?.message || '';
+      } else if (text) {
+        error.responseText = text;
+      }
+      throw error;
+    }
+
+    const body = await response.json();
+    return body;
+  } catch (error) {
+    throw enrichError(error, {
+      context: 'ai-analyst',
+      fallback: 'AI Analyst is currently unavailable. Please try again shortly.',
+    });
   }
-  return response.json();
 }
 
 function updateValuationCard(valuationData = {}) {
@@ -653,13 +682,13 @@ async function runAnalysis() {
     lastAnalysis = { symbol, limit, timeframe, data };
   } catch (error) {
     console.error(error);
-    setStatus(`Analysis failed: ${error.message}`, 'error');
+    setStatus(error?.userMessage || error?.friendlyMessage || error?.message || 'Analysis failed. Please retry.', 'error');
     resetValuationCard();
     renderTimeline([]);
     renderDocuments([]);
     renderNews([]);
     resetPriceChart('Price history unavailable.');
-    renderNarrative('', 'Unable to produce AI narrative. Please retry.');
+    renderNarrative('', error?.userMessage || error?.friendlyMessage || 'Unable to produce AI narrative. Please retry.');
   } finally {
     setLoadingState(false);
   }
@@ -700,7 +729,7 @@ function init() {
 
   runAnalysis().catch((error) => {
     console.error('Initial analysis failed', error);
-    setStatus('Initial analysis failed. Please retry.', 'error');
+    setStatus(error?.userMessage || error?.friendlyMessage || 'Initial analysis failed. Please retry.', 'error');
   });
 }
 

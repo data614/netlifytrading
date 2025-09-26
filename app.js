@@ -1,4 +1,5 @@
 import { createRenderQueue, createRequestCache } from './utils/browser-cache.js';
+import { enrichError, getFriendlyErrorMessage } from './utils/frontend-errors.js';
 
 // Minimal frontend logic to fetch from Netlify functions and render the UI
 // Uses the existing _redirects mapping: `/api/* -> /.netlify/functions/:splat`
@@ -61,6 +62,18 @@ async function callTiingo(params, options = {}) {
     const cached = tiingoRequestCache.get(key);
     if (cached) {
       if (!silent) showLoading(false);
+      // Mirror "main" branch behavior: surface friendly warnings on cached hits too
+      if (!silent && cached?.meta?.reason === 'exception') {
+        const friendlyWarning = getFriendlyErrorMessage({
+          context: 'tiingo',
+          message: cached?.warning || cached?.meta?.message || '',
+          detail: cached?.meta?.message || '',
+          fallback: 'Live market data is temporarily unavailable. Displaying sample data.',
+        });
+        showError(friendlyWarning);
+      } else if (!silent) {
+        showError('');
+      }
       return cached;
     }
   }
@@ -70,14 +83,21 @@ async function callTiingo(params, options = {}) {
     const loader = async () => {
       const resp = await fetch(url, { headers: { accept: 'application/json' } });
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data?.warning || data?.error || resp.statusText);
+      if (!resp.ok) {
+        const error = new Error(data?.warning || data?.error || resp.statusText || 'Tiingo request failed.');
+        error.status = resp.status;
+        error.response = data;
+        throw error;
+      }
       if (data?.warning) console.warn('tiingo warning:', data.warning);
+      const responseMeta = data?.meta && typeof data.meta === 'object' ? { ...data.meta } : {};
       const meta = {
-        source: resp.headers.get('x-tiingo-source') || data?.meta?.source || '',
-        fallback: resp.headers.get('x-tiingo-fallback') || data?.meta?.fallback || '',
+        ...responseMeta,
+        source: resp.headers.get('x-tiingo-source') || responseMeta.source || '',
+        fallback: resp.headers.get('x-tiingo-fallback') || responseMeta.fallback || '',
         tokenPreview: resp.headers.get('x-tiingo-token-preview') || '',
         chosenKey: resp.headers.get('x-tiingo-chosen-key') || '',
-        kind: data?.meta?.kind || params?.kind || '',
+        kind: params?.kind || responseMeta.kind || '',
       };
       return {
         body: data,
@@ -87,15 +107,37 @@ async function callTiingo(params, options = {}) {
         meta,
       };
     };
-    return await tiingoRequestCache.resolve(key, loader, ttl);
-  } catch (err) {
+
+    const payload = await tiingoRequestCache.resolve(key, loader, ttl);
+
     if (!silent) {
-      showError(`Request failed: ${String(err.message || err)}`);
-    } else {
-      console.warn('Tiingo request failed', err);
+      if (payload?.meta?.reason === 'exception') {
+        const friendlyWarning = getFriendlyErrorMessage({
+          context: 'tiingo',
+          message: payload?.warning || payload?.meta?.message || '',
+          detail: payload?.meta?.message || '',
+          fallback: 'Live market data is temporarily unavailable. Displaying sample data.',
+        });
+        showError(friendlyWarning);
+      } else {
+        showError('');
+      }
     }
+
+    return payload;
+  } catch (err) {
+    const enhanced = enrichError(err, {
+      context: 'tiingo',
+      fallback: 'Unable to load market data. Please try again shortly.',
+    });
+    if (!silent) {
+      showError(enhanced.userMessage || enhanced.message);
+    } else {
+      console.warn('Tiingo request failed', enhanced);
+    }
+    // ensure bad entries aren’t retained
     tiingoRequestCache.delete(key);
-    throw err;
+    throw enhanced;
   } finally {
     if (!silent) showLoading(false);
   }
@@ -936,6 +978,7 @@ function renderChart(rows, intraday) {
     priceChart.destroy();
     priceChart = null;
   }
+  // eslint-disable-next-line no-undef
   priceChart = new Chart(ctx, {
     type: 'line',
     data: {
