@@ -76,6 +76,22 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-se
 .news-item{padding:10px 0;border-bottom:1px solid var(--border-color)} .news-item:last-child{border-bottom:none}
 .news-item a{color:var(--text-primary);text-decoration:none;font-weight:500} .news-item a:hover{color:var(--accent-blue)}
 .news-item small{color:var(--text-secondary);display:block;margin-top:4px}
+.event-feed{position:relative;display:flex;flex-direction:column;gap:16px;padding-left:12px}
+.event-feed::before{content:"";position:absolute;left:6px;top:4px;bottom:4px;width:2px;background:rgba(255,255,255,.1)}
+.event-item{position:relative;padding-left:18px}
+.event-item::before{content:"";position:absolute;left:-13px;top:8px;width:10px;height:10px;border-radius:50%;border:2px solid var(--background-secondary);background:var(--accent-blue);box-shadow:0 0 0 2px rgba(18,23,33,.65)}
+.event-item-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.8em;color:var(--text-secondary);margin-bottom:6px}
+.event-item-type{font-size:.75em;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-blue)}
+.event-item-title{color:var(--text-primary);font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.event-item-title:hover{color:var(--accent-blue)}
+.event-item-summary{margin:6px 0 0;font-size:.9em;color:var(--text-secondary)}
+.event-item-details{margin-top:4px;font-size:.8em;color:var(--text-secondary)}
+.event-feed-warning{background:rgba(241,196,15,.12);border:1px solid rgba(241,196,15,.35);color:#f9e79f;padding:10px 12px;border-radius:8px;font-size:.85em}
+.event-type-filing::before,.event-type-document::before{background:#9b59b6}
+.event-type-dividend::before{background:var(--accent-green)}
+.event-type-split::before{background:#f39c12}
+.event-item time{font-style:normal;color:var(--text-secondary)}
+.event-feed-empty{color:var(--text-secondary);font-size:.9em}
 .tf{display:flex;gap:6px;flex-wrap:wrap}
 .tf button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
 .tf button.active{background:rgba(52,152,219,.25);border-color:var(--accent-blue)}
