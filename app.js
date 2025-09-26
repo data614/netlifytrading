@@ -42,6 +42,12 @@ const scheduleMoversRender = createRenderQueue();
 const scheduleNewsRender = createRenderQueue();
 const scheduleSearchRender = createRenderQueue();
 
+const timeLabelFormatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
+const dateLabelFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+let timeframeButtons = [];
+let timeframeLoading = false;
+let lastChartSymbol = '';
+
 function defaultTiingoCacheTtl(params = {}) {
   const kind = String(params?.kind || '').toLowerCase();
   if (kind === 'intraday_latest') return 10_000;
@@ -939,6 +945,26 @@ function updateRangeStats(rows) {
   $('stat52wLow').textContent = fmt(Math.min(...lows));
 }
 
+function parseDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatChartLabel(value, intraday) {
+  const date = parseDate(value);
+  if (!date) return '';
+  return intraday ? timeLabelFormatter.format(date) : dateLabelFormatter.format(date);
+}
+
+function updateTimeframeButtons(activeTf) {
+  timeframeButtons.forEach((btn) => {
+    const isActive = btn.dataset.tf === activeTf;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
 function renderQuote(q) {
   if (!q) {
     $('stockPrice').textContent = '—';
@@ -969,39 +995,97 @@ function renderQuote(q) {
 }
 
 function renderChart(rows, intraday) {
-  const ctx = $('stockChart');
-  if (!ctx || !Array.isArray(rows)) return;
-  const labels = rows.map((r) => new Date(r.date)[intraday ? 'toLocaleTimeString' : 'toLocaleDateString']());
-  const values = rows.map((r) => Number(r.close));
-  const ma = sma(values, Math.min(20, values.length));
-  if (priceChart) {
-    priceChart.destroy();
-    priceChart = null;
-  }
-  // eslint-disable-next-line no-undef
-  priceChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Price', data: values, borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,.14)', fill: values.length > 1, tension: 0.12, spanGaps: false, clip: 5 },
-        { label: 'SMA 20', data: ma, borderColor: '#f1c40f', borderDash: [6, 4], fill: false, tension: 0, spanGaps: false, clip: 5 },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: { grid: { color: 'rgba(255,255,255,.08)' }, ticks: { color: '#cfd3da' } },
-        x: { grid: { color: 'rgba(255,255,255,.06)' }, ticks: { color: '#cfd3da', maxTicksLimit: 10 } },
-      },
-      plugins: { legend: { labels: { color: '#cfd3da' } }, tooltip: { mode: 'index', intersect: false } },
-      animation: { duration: 400 },
-    },
+  const canvas = $('stockChart');
+  if (!canvas || !Array.isArray(rows)) return;
+
+  const labels = [];
+  const numericValues = [];
+  const plottedValues = [];
+  let validValueCount = 0;
+
+  rows.forEach((row) => {
+    labels.push(formatChartLabel(row?.date, intraday));
+    const raw = Number(row?.close ?? row?.last ?? row?.price);
+    numericValues.push(raw);
+    if (Number.isFinite(raw)) {
+      const rounded = Number(raw.toFixed(2));
+      plottedValues.push(rounded);
+      validValueCount += 1;
+    } else {
+      plottedValues.push(null);
+    }
   });
+
+  const ma = sma(numericValues, Math.min(20, numericValues.length));
+  const hasMultiplePoints = validValueCount > 1;
+  const animation = { duration: intraday ? 280 : 400, easing: 'easeOutCubic' };
+  const xTickLimit = intraday ? 8 : 10;
+
+  if (!priceChart) {
+    // eslint-disable-next-line no-undef
+    priceChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Price',
+            data: plottedValues,
+            borderColor: '#2ecc71',
+            backgroundColor: 'rgba(46,204,113,.14)',
+            fill: hasMultiplePoints,
+            tension: 0.12,
+            spanGaps: false,
+            clip: 5,
+            pointRadius: 0,
+            borderWidth: 2,
+          },
+          {
+            label: 'SMA 20',
+            data: ma,
+            borderColor: '#f1c40f',
+            borderDash: [6, 4],
+            fill: false,
+            tension: 0,
+            spanGaps: false,
+            clip: 5,
+            pointRadius: 0,
+            borderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation,
+        interaction: { mode: 'nearest', intersect: false },
+        scales: {
+          y: { grid: { color: 'rgba(255,255,255,.08)' }, ticks: { color: '#cfd3da' } },
+          x: { grid: { color: 'rgba(255,255,255,.06)' }, ticks: { color: '#cfd3da', maxTicksLimit: xTickLimit } },
+        },
+        plugins: { legend: { labels: { color: '#cfd3da' } }, tooltip: { mode: 'index', intersect: false } },
+      },
+    });
+  } else {
+    priceChart.data.labels = labels;
+    if (priceChart.data.datasets[0]) {
+      priceChart.data.datasets[0].data = plottedValues;
+      priceChart.data.datasets[0].fill = hasMultiplePoints;
+    }
+    if (priceChart.data.datasets[1]) {
+      priceChart.data.datasets[1].data = ma;
+    }
+    if (priceChart.options?.scales?.x?.ticks) {
+      priceChart.options.scales.x.ticks.maxTicksLimit = xTickLimit;
+    }
+    priceChart.options.animation = animation;
+    priceChart.update('active');
+  }
 
   if (!intraday) {
     updateRangeStats(rows);
+  } else {
+    updateRangeStats([]);
   }
 }
 
@@ -1031,29 +1115,39 @@ function tfParams(tf) {
   }
 }
 
-async function loadTimeframe(tf) {
-  currentTimeframe = tf;
-  document.querySelectorAll('#tfControls button').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tf === tf);
-  });
-  const { intraday, interval, limit } = tfParams(tf);
-  const params = intraday
-    ? { symbol: currentSymbol, kind: 'intraday', interval, limit }
-    : { symbol: currentSymbol, kind: 'eod', limit };
-  const res = await callTiingo(params);
-  const rows = Array.isArray(res?.data)
-    ? res.data.slice().sort((a, b) => new Date(a.date) - new Date(b.date))
-    : [];
-  if (!rows.length) {
-    showError('No data returned.');
-    updateChartStatus(res?.meta || {}, res?.warning || 'No data returned', 0);
+async function loadTimeframe(tf, { force = false } = {}) {
+  if (!tf) return;
+  const target = String(tf).toUpperCase();
+  const sameTimeframe = target === currentTimeframe;
+  const symbolChanged = currentSymbol !== lastChartSymbol;
+  if (!force && sameTimeframe && priceChart && !symbolChanged) {
+    updateTimeframeButtons(target);
     return;
   }
-  renderChart(rows, intraday);
-  updateChartStatus(res?.meta || {}, res?.warning || '', rows.length);
-  if (res?.meta) updateApiBadge(res.meta);
-  if (intraday) {
-    updateRangeStats([]);
+  if (timeframeLoading) return;
+  timeframeLoading = true;
+  currentTimeframe = target;
+  updateTimeframeButtons(target);
+  try {
+    const { intraday, interval, limit } = tfParams(target);
+    const params = intraday
+      ? { symbol: currentSymbol, kind: 'intraday', interval, limit }
+      : { symbol: currentSymbol, kind: 'eod', limit };
+    const res = await callTiingo(params);
+    const rows = Array.isArray(res?.data)
+      ? res.data.slice().sort((a, b) => new Date(a.date) - new Date(b.date))
+      : [];
+    if (!rows.length) {
+      showError('No data returned.');
+      updateChartStatus(res?.meta || {}, res?.warning || 'No data returned', 0);
+      return;
+    }
+    renderChart(rows, intraday);
+    updateChartStatus(res?.meta || {}, res?.warning || '', rows.length);
+    if (res?.meta) updateApiBadge(res.meta);
+    lastChartSymbol = currentSymbol;
+  } finally {
+    timeframeLoading = false;
   }
 }
 
@@ -1092,6 +1186,18 @@ async function init() {
   renderWatchlist();
   renderMarketMovers();
   updateApiBadge({});
+  const tfControls = $('tfControls');
+  timeframeButtons = tfControls ? Array.from(tfControls.querySelectorAll('button')) : [];
+  updateTimeframeButtons(currentTimeframe);
+  timeframeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tf = btn.getAttribute('data-tf');
+      if (!tf) return;
+      loadTimeframe(tf).catch((err) => {
+        console.warn('Failed to load timeframe data', err);
+      });
+    });
+  });
   $('stockSymbol').textContent = currentSymbol;
   $('stockName').textContent = currentSymbolName;
   $('exchangeAcronym').textContent = currentExchange ? ` ${currentExchange}` : '';
@@ -1101,7 +1207,7 @@ async function init() {
     console.warn('Initial quote load failed', err);
   }
   try {
-    await loadTimeframe(currentTimeframe);
+    await loadTimeframe(currentTimeframe, { force: true });
   } catch (err) {
     console.warn('Initial timeframe load failed', err);
   }
@@ -1111,14 +1217,11 @@ async function init() {
     console.warn('Initial watchlist refresh failed', err);
   }
   startWatchlistAutoRefresh();
-
-  document.querySelectorAll('#tfControls button').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const tf = btn.getAttribute('data-tf');
-      if (!tf) return;
-      await loadTimeframe(tf);
-    });
-  });
 }
 
-window.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init().catch((err) => {
+    console.error('App initialisation failed', err);
+    showError('Unable to start the trading desk. Please reload.');
+  });
+}, { once: true });

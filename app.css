@@ -15,8 +15,8 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-se
 .nav-links a{color:var(--text-secondary);text-decoration:none;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);transition:all .2s ease}
 .nav-links a:hover{color:#fff;border-color:rgba(255,255,255,.18)}
 .nav-links a.active{background:var(--accent-blue);color:#fff;border-color:rgba(255,255,255,.25)}
-.main-content{flex:3;padding:24px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;min-width:0}
-.sidebar{flex:1;background-color:rgba(31,37,51,.95);padding:24px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;border-left:1px solid var(--border-color);backdrop-filter:blur(4px);min-width:280px}
+.main-content{flex:3;padding:24px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;min-width:0;min-height:0;-webkit-overflow-scrolling:touch}
+.sidebar{flex:1;background-color:rgba(31,37,51,.95);padding:24px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;border-left:1px solid var(--border-color);backdrop-filter:blur(4px);min-width:280px;min-height:0;-webkit-overflow-scrolling:touch}
 @supports not ((-webkit-backdrop-filter:blur(4px)) or (backdrop-filter:blur(4px))){.sidebar{background-color:rgba(31,37,51,.98)}}
 .card{background-color:rgba(31,37,51,.92);border-radius:14px;padding:20px;border:1px solid var(--border-color);box-shadow:var(--shadow-elevated);backdrop-filter:blur(2px)}
 @supports not ((-webkit-backdrop-filter:blur(2px)) or (backdrop-filter:blur(2px))){.card{background-color:rgba(31,37,51,.98)}}
