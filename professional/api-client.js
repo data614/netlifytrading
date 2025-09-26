@@ -1,3 +1,5 @@
+import { getResearchLabInsights, getScreenerSnapshot } from './research-data.js';
+
 const API_ROOT = '/api/tiingo';
 
 function buildUrl(params = {}) {
@@ -106,4 +108,14 @@ export async function fetchValuationSnapshot(symbol) {
   const payload = await requestTiingo({ symbol: upper, kind: 'valuation' });
   const data = payload?.data || null;
   return { symbol: payload?.symbol || upper, snapshot: data, meta: payload?.meta || {}, warning: payload?.warning || '' };
+}
+
+export async function fetchResearchLabSnapshot(symbol) {
+  const data = getResearchLabInsights(symbol);
+  return { ...data };
+}
+
+export async function fetchScreenerPreview(symbol) {
+  const data = getScreenerSnapshot(symbol);
+  return { ...data };
 }

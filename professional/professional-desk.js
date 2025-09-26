@@ -6,8 +6,11 @@ import {
   fetchSecFilings,
   AVAILABLE_RANGES,
   describeRange,
+  fetchResearchLabSnapshot,
+  fetchScreenerPreview,
 } from './api-client.js';
 import { createNewsFeed, createFilingsFeed, createMarketRadarShell, createDocumentViewer } from './feeds.js';
+import { createResearchLabPanel, createScreenerPreview } from './research-modules.js';
 
 const state = {
   symbol: 'AAPL',
@@ -28,6 +31,8 @@ let newsFeed;
 let filingsFeed;
 let documentViewer;
 let marketRadarShell;
+let researchLabPanel;
+let screenerPreviewCard;
 
 const getFilingId = (item) =>
   item?.id || item?.url || (item?.documentType ? `${item.documentType}-${item?.publishedAt || ''}` : item?.publishedAt || '');
@@ -246,8 +251,65 @@ async function refreshFilings() {
   }
 }
 
+async function refreshWorkspaceExtensions() {
+  const tasks = [];
+
+  if (researchLabPanel) {
+    researchLabPanel.setLoading(true);
+    tasks.push(
+      fetchResearchLabSnapshot(state.symbol)
+        .then((data) => {
+          researchLabPanel.setSource?.(data.meta || {});
+          researchLabPanel.update({ ...data });
+        })
+        .catch((error) => {
+          console.error(error);
+          researchLabPanel.setSource?.({ label: 'Unavailable', title: error?.message || '' });
+          researchLabPanel.update({
+            symbol: state.symbol,
+            summary: error?.message || 'Unable to load research insights.',
+            quickStats: [],
+            diligence: [],
+            catalysts: [],
+          });
+        })
+        .finally(() => {
+          researchLabPanel.setLoading(false);
+        }),
+    );
+  }
+
+  if (screenerPreviewCard) {
+    screenerPreviewCard.setLoading(true);
+    tasks.push(
+      fetchScreenerPreview(state.symbol)
+        .then((data) => {
+          screenerPreviewCard.setSource?.(data.meta || {});
+          screenerPreviewCard.update({ ...data });
+        })
+        .catch((error) => {
+          console.error(error);
+          screenerPreviewCard.setSource?.({ label: 'Unavailable', title: error?.message || '' });
+          screenerPreviewCard.update({
+            symbol: state.symbol,
+            summary: error?.message || 'Unable to load screener data.',
+            metrics: [],
+            topIdeas: [],
+          });
+        })
+        .finally(() => {
+          screenerPreviewCard.setLoading(false);
+        }),
+    );
+  }
+
+  if (tasks.length) {
+    await Promise.all(tasks);
+  }
+}
+
 async function refreshIntel() {
-  await Promise.all([refreshNews(), refreshFilings()]);
+  await Promise.all([refreshNews(), refreshFilings(), refreshWorkspaceExtensions()]);
 }
 
 async function refreshData() {
@@ -276,6 +338,8 @@ function handleSymbolChange(symbol) {
   document.querySelectorAll('[data-active-symbol]').forEach((el) => {
     el.textContent = symbol;
   });
+  researchLabPanel?.setLoading(true);
+  screenerPreviewCard?.setLoading(true);
   const watchlist = document.getElementById('watchlist-items');
   if (watchlist) {
     watchlist.querySelectorAll('li').forEach((item) => {
@@ -362,6 +426,23 @@ function init() {
   }
 
   if (intelTools) {
+    researchLabPanel = createResearchLabPanel({
+      labUrl: 'valuation-lab.html',
+      onLogFollowUp: (activeSymbol) => {
+        const symbol = activeSymbol || state.symbol;
+        const detail = { symbol };
+        window.dispatchEvent(new CustomEvent('professional-desk:log-follow-up', { detail }));
+        console.info('Follow-up logged for research lab focus', detail);
+      },
+    });
+    screenerPreviewCard = createScreenerPreview({
+      screenerUrl: 'quant-screener.html',
+      exportUrl: 'quant-screener.html#export',
+      linkBuilder: (item = {}) => {
+        const token = (item.symbol || '').trim().toUpperCase();
+        return token ? `quant-screener.html#${token}` : 'quant-screener.html';
+      },
+    });
     marketRadarShell = createMarketRadarShell({
       screenerUrl: 'quant-screener.html',
       analystUrl: 'ai-analyst.html',
@@ -372,7 +453,12 @@ function init() {
     });
     documentViewer = createDocumentViewer();
     intelTools.innerHTML = '';
-    intelTools.append(marketRadarShell.element, documentViewer.element);
+    intelTools.append(
+      researchLabPanel.element,
+      screenerPreviewCard.element,
+      marketRadarShell.element,
+      documentViewer.element,
+    );
   }
 
   hydrateWatchlist();
