@@ -43,9 +43,9 @@ export function createRequestCache({ ttl = 30000, maxEntries = 64, onEvict = NOO
   };
 
   const resolveTtl = (customTtl) => {
-    if (customTtl === Infinity) return Infinity;
     if (Number.isFinite(customTtl) && customTtl > 0) return customTtl;
     if (customTtl === 0) return 0;
+    if (customTtl === Infinity) return Infinity;
     return ttl;
   };
 
