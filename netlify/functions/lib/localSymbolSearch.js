@@ -1,19 +1,21 @@
-﻿import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+﻿import { createRequire } from 'node:module';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const dataPath = path.resolve(__dirname, '../../../data/symbols.json');
+const require = createRequire(import.meta.url);
 
 // Load dataset synchronously at module init so exports remain synchronous
-let dataset;
-try {
-  const json = fs.readFileSync(dataPath, 'utf8');
-  dataset = JSON.parse(json);
-} catch (e) {
-  dataset = { symbols: [] };
-}
+const dataset = (() => {
+  try {
+    const data = require('../../../data/symbols.json');
+    if (data && typeof data === 'object' && Array.isArray(data.symbols)) {
+      return data;
+    }
+  } catch (error) {
+    if (process?.env?.NODE_ENV !== 'production') {
+      console.warn?.('[localSymbolSearch] local symbol dataset unavailable:', error?.message || error);
+    }
+  }
+  return { symbols: [] };
+})();
 
 const MIC_PREFIXES = {
   XNAS: ['NASDAQ', 'US', 'USA'],
