@@ -76,10 +76,12 @@
           <h3>Market Movers (Watchlist universe)</h3>
           <span class="chip mono" id="apiKeyEcho">API: —</span>
         </div>
-        <table class="data-table" id="marketMoversTable">
-          <thead><tr><th>Symbol</th><th>Price</th><th>Δ%</th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <div class="table-scroll" role="region" aria-live="polite" aria-label="Market movers table">
+          <table class="data-table" id="marketMoversTable">
+            <thead><tr><th>Symbol</th><th>Price</th><th>Δ%</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </main>
 
