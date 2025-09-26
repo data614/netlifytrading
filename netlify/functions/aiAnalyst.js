@@ -1,6 +1,7 @@
 import { getTiingoToken, TIINGO_TOKEN_ENV_KEYS } from './lib/env.js';
 import {
   loadValuation,
+  loadCompanyOverview,
   loadCompanyNews,
   loadCompanyDocuments,
   loadCorporateActions,
@@ -154,6 +155,7 @@ export async function gatherSymbolIntel(symbol, { limit = 120, timeframe = '3M' 
 
   if (!token) {
     const fundamentals = tiingoMock.mockFundamentals(upper);
+    const overview = tiingoMock.mockOverview(upper);
     const valuation = buildValuationSnapshot({
       price: fundamentals.metrics.price,
       earningsPerShare: fundamentals.metrics.earningsPerShare,
@@ -183,6 +185,7 @@ export async function gatherSymbolIntel(symbol, { limit = 120, timeframe = '3M' 
       actions,
       timeline,
       trend: priceSeries,
+      overview,
       aiSummary: buildChatGpt5Summary(upper, {
         valuation: {
           symbol: upper,
@@ -199,12 +202,13 @@ export async function gatherSymbolIntel(symbol, { limit = 120, timeframe = '3M' 
     };
   }
 
-  const [valuation, news, documents, actions, trend] = await Promise.all([
+  const [valuation, news, documents, actions, trend, overview] = await Promise.all([
     loadValuation(upper, token),
     loadCompanyNews(upper, 12, token).catch(() => []),
     loadCompanyDocuments(upper, 8, token).catch(() => []),
     loadCorporateActions(upper, token).catch(() => ({})),
     loadEod(upper, limit, token).catch(() => []),
+    loadCompanyOverview(upper, token).catch(() => null),
   ]);
 
   if (!news.length) warning = 'No recent news from Tiingo. Check symbol coverage.';
@@ -219,6 +223,7 @@ export async function gatherSymbolIntel(symbol, { limit = 120, timeframe = '3M' 
     actions,
     timeline,
     trend,
+    overview: overview || undefined,
     aiSummary: buildChatGpt5Summary(upper, { valuation, news, documents, trend }),
     generatedAt: new Date().toISOString(),
     warning,
