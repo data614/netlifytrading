@@ -1,3 +1,5 @@
+import { computeValuationScores, VALUATION_RADAR_LABELS } from './utils/valuation-scorer.js';
+
 const $ = (selector) => document.querySelector(selector);
 
 const fmtCurrency = (value) => {
@@ -26,20 +28,10 @@ let valuationRadarChart;
 let lastAnalysis = null;
 let runButtonDefaultHtml = '';
 
-const radarLabels = ['P/E', 'P/S', 'Analyst Upside', 'AI Score'];
-
 const fmtMultiple = (value) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return '—';
   return `${num.toFixed(1)}×`;
-};
-
-const clampValue = (value, min, max) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-  if (typeof min === 'number' && num < min) return min;
-  if (typeof max === 'number' && num > max) return max;
-  return num;
 };
 
 function extractValuationMetrics(valuationData = {}) {
@@ -114,71 +106,10 @@ function resetValuationRadar(message = 'Quant metrics awaiting Tiingo fundamenta
   }
 }
 
-function computeRadarMetrics({ price, upside, fundamentals }) {
-  const metrics = fundamentals?.metrics || fundamentals || {};
-  const toFinite = (value) => {
-    const num = Number(value);
-    return Number.isFinite(num) ? num : null;
-  };
-
-  const cleanPrice = toFinite(price);
-  const eps = toFinite(metrics.earningsPerShare ?? metrics.eps);
-  const revenuePerShare = toFinite(metrics.revenuePerShare ?? metrics.salesPerShare ?? metrics.revenuePS);
-
-  const peRatio = cleanPrice !== null && eps && Math.abs(eps) > 1e-6 ? cleanPrice / eps : null;
-  const psRatio = cleanPrice !== null && revenuePerShare && Math.abs(revenuePerShare) > 1e-6 ? cleanPrice / revenuePerShare : null;
-  const upsidePct = Number.isFinite(upside) ? upside * 100 : null;
-
-  const peScore = (() => {
-    if (!Number.isFinite(peRatio) || peRatio <= 0) return null;
-    const min = 8;
-    const max = 40;
-    const clamped = clampValue(peRatio, min, max);
-    if (clamped === null || max === min) return null;
-    return ((max - clamped) / (max - min)) * 100;
-  })();
-
-  const psScore = (() => {
-    if (!Number.isFinite(psRatio) || psRatio <= 0) return null;
-    const min = 1;
-    const max = 12;
-    const clamped = clampValue(psRatio, min, max);
-    if (clamped === null || max === min) return null;
-    return ((max - clamped) / (max - min)) * 100;
-  })();
-
-  const upsideScore = (() => {
-    if (!Number.isFinite(upsidePct)) return null;
-    const min = -20;
-    const max = 40;
-    const clamped = clampValue(upsidePct, min, max);
-    if (clamped === null || max === min) return null;
-    return ((clamped - min) / (max - min)) * 100;
-  })();
-
-  const scoreCandidates = [peScore, psScore, upsideScore].filter((value) => Number.isFinite(value));
-  const aiScore = scoreCandidates.length
-    ? scoreCandidates.reduce((total, value) => total + value, 0) / scoreCandidates.length
-    : null;
-
-  const availableCount = [peRatio, psRatio, upsidePct].filter((value) => Number.isFinite(value)).length;
-
-  return {
-    peRatio,
-    psRatio,
-    upsidePct,
-    peScore,
-    psScore,
-    upsideScore,
-    aiScore,
-    availableCount,
-  };
-}
-
 function updateRadarChart(values = []) {
   const canvas = document.getElementById('valuationRadarChart');
   if (!canvas) return;
-  const datasetValues = radarLabels.map((_, index) => {
+  const datasetValues = VALUATION_RADAR_LABELS.map((_, index) => {
     const value = values[index];
     return Number.isFinite(value) ? value : 0;
   });
@@ -187,7 +118,7 @@ function updateRadarChart(values = []) {
     valuationRadarChart = new Chart(canvas, {
       type: 'radar',
       data: {
-        labels: radarLabels,
+        labels: VALUATION_RADAR_LABELS,
         datasets: [
           {
             data: datasetValues,
@@ -249,23 +180,30 @@ function updateRadarChart(values = []) {
 }
 
 function renderValuationRadar({ price, upside, fundamentals }) {
-  const metrics = computeRadarMetrics({ price, upside, fundamentals });
-  const { peRatio, psRatio, upsidePct, peScore, psScore, upsideScore, aiScore, availableCount } = metrics;
+  const { pe, ps, upside: upsideMetric, composite } = computeValuationScores({
+    price,
+    upside,
+    fundamentals,
+  });
 
   const peEl = document.getElementById('valuationPe');
-  if (peEl) peEl.textContent = fmtMultiple(peRatio);
+  if (peEl) peEl.textContent = fmtMultiple(pe?.ratio);
   const psEl = document.getElementById('valuationPs');
-  if (psEl) psEl.textContent = fmtMultiple(psRatio);
+  if (psEl) psEl.textContent = fmtMultiple(ps?.ratio);
   const upsideEl = document.getElementById('valuationUpsideMetric');
-  if (upsideEl) upsideEl.textContent = Number.isFinite(upsidePct) ? fmtPercent(upsidePct) : '—';
+  if (upsideEl) upsideEl.textContent = Number.isFinite(upsideMetric?.percent)
+    ? fmtPercent(upsideMetric.percent)
+    : '—';
 
   const inlineScore = document.getElementById('valuationAiScoreInline');
-  if (inlineScore) inlineScore.textContent = Number.isFinite(aiScore) ? `${Math.round(aiScore)}%` : '—';
+  if (inlineScore) inlineScore.textContent = Number.isFinite(composite?.score)
+    ? `${Math.round(composite.score)}%`
+    : '—';
 
   const centerScore = document.getElementById('valuationAiScore');
   if (centerScore) {
-    if (Number.isFinite(aiScore)) {
-      centerScore.textContent = Math.round(aiScore).toString();
+    if (Number.isFinite(composite?.score)) {
+      centerScore.textContent = Math.round(composite.score).toString();
       centerScore.dataset.unit = 'percent';
     } else {
       centerScore.textContent = '—';
@@ -273,22 +211,22 @@ function renderValuationRadar({ price, upside, fundamentals }) {
     }
   }
 
-  setMetricBar('valuationPeBar', peScore);
-  setMetricBar('valuationPsBar', psScore);
-  setMetricBar('valuationUpsideBar', upsideScore);
-  setMetricBar('valuationScoreBar', aiScore);
+  setMetricBar('valuationPeBar', pe?.score);
+  setMetricBar('valuationPsBar', ps?.score);
+  setMetricBar('valuationUpsideBar', upsideMetric?.score);
+  setMetricBar('valuationScoreBar', composite?.score);
 
   const caption = document.getElementById('valuationRadarCaption');
   if (caption) {
-    caption.textContent = availableCount
+    caption.textContent = composite?.availableCount
       ? 'Normalized valuation signals (0-100, higher indicates stronger relative value).'
       : 'Quant metrics awaiting Tiingo fundamentals.';
   }
 
   const container = document.getElementById('valuationRadar');
-  if (container) container.classList.toggle('is-empty', !availableCount);
+  if (container) container.classList.toggle('is-empty', !composite?.availableCount);
 
-  updateRadarChart([peScore, psScore, upsideScore, aiScore]);
+  updateRadarChart([pe?.score, ps?.score, upsideMetric?.score, composite?.score]);
 }
 
 async function fetchIntel({ symbol, limit, timeframe }) {
