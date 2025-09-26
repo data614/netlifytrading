@@ -137,6 +137,44 @@
         </article>
       </div>
 
+      <div class="card large" id="batchResultsCard">
+        <div class="card-header">
+          <h2>Batch intelligence</h2>
+          <span id="batchSummary" class="chip">—</span>
+        </div>
+        <div class="batch-controls">
+          <label class="field" for="batchSymbolsInput">
+            <span>Batch symbols (comma separated)</span>
+            <input id="batchSymbolsInput" type="text" value="AAPL, MSFT, NVDA, GOOGL, AMZN" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="action-row">
+            <button id="batchRunButton" class="btn primary" type="button">
+              <i class="fa-solid fa-layer-group"></i>
+              Run batch scan
+            </button>
+            <button id="batchResetButton" class="btn ghost" type="button">
+              <i class="fa-solid fa-rotate"></i>
+              Reset list
+            </button>
+          </div>
+          <div id="batchStatus" class="status-message" role="status" aria-live="polite"></div>
+        </div>
+        <div class="table-wrapper" aria-live="polite">
+          <table class="screener-table" id="batchResultsTable">
+            <thead>
+              <tr>
+                <th scope="col" data-key="symbol" data-type="string">Symbol</th>
+                <th scope="col" data-key="price" data-type="number">Price</th>
+                <th scope="col" data-key="aiUpsidePct" data-type="number">AI Upside %</th>
+                <th scope="col" data-key="metric1" data-type="number">Key Metric 1</th>
+                <th scope="col" data-key="metric2" data-type="number">Key Metric 2</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card large">
         <div class="card-header">
           <h2>Price evolution</h2>
