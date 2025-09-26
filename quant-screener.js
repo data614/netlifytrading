@@ -26,12 +26,53 @@ const fmtPercent = (value) => {
   return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
 };
 
+const HEATMAP_LIMIT = 18;
+
+const clamp = (value, min, max) => {
+  if (Number.isNaN(value)) return min;
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+};
+
+const blendChannel = (start, end, ratio) => Math.round(start + (end - start) * ratio);
+
+function computeHeatColor(value, min, max) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const low = [200, 68, 68];
+  const high = [46, 163, 83];
+
+  if (max === min) {
+    const rgb = value >= 0 ? high : low;
+    const background = `rgb(${rgb.join(', ')})`;
+    const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+    const text = brightness < 140 ? '#f8fbff' : '#04141f';
+    return { background, text };
+  }
+
+  const span = max - min;
+  const ratio = clamp((value - min) / span, 0, 1);
+  const rgb = [
+    blendChannel(low[0], high[0], ratio),
+    blendChannel(low[1], high[1], ratio),
+    blendChannel(low[2], high[2], ratio),
+  ];
+  const background = `rgb(${rgb.join(', ')})`;
+  const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+  const text = brightness < 140 ? '#f8fbff' : '#04141f';
+  return { background, text };
+}
+
 const defaultUniverse = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'NFLX'];
 
 let currentResults = [];
 let processedRows = [];
 let currentSort = { key: 'upside', direction: 'desc' };
 let isScreening = false;
+let visibleRows = [];
 
 async function fetchIntel(symbol) {
   const url = new URL('/api/aiAnalyst', window.location.origin);
@@ -101,24 +142,78 @@ function readFilters() {
 }
 
 function renderHeatmap(rows) {
+  const container = $('#heatmap');
+  if (!container) return;
+
+  container.classList.remove('is-empty');
+  container.innerHTML = '';
+
   if (!rows.length) {
-    $('#heatmap').textContent = 'Run the screener to populate aggregated intelligence.';
+    container.classList.add('is-empty');
+    container.textContent = 'Run the screener to populate aggregated intelligence.';
     return;
   }
-  const top = [...rows].sort((a, b) => (b.upside ?? -Infinity) - (a.upside ?? -Infinity)).slice(0, 3);
-  const laggards = [...rows].sort((a, b) => (a.upside ?? Infinity) - (b.upside ?? Infinity)).slice(0, 3);
-  const momentumLeaders = [...rows].sort((a, b) => (b.momentum ?? -Infinity) - (a.momentum ?? -Infinity)).slice(0, 3);
 
-  $('#heatmap').innerHTML = [
-    `<strong>Top upside</strong>: ${top.map((row) => `${row.symbol} (${fmtPercent(row.upside)})`).join(', ')}`,
-    `<strong>Weakest upside</strong>: ${laggards.map((row) => `${row.symbol} (${fmtPercent(row.upside)})`).join(', ')}`,
-    `<strong>Momentum leaders</strong>: ${momentumLeaders.map((row) => `${row.symbol} (${fmtPercent(row.momentum)})`).join(', ')}`,
-  ].join('<br/>');
+  const numericUpsides = rows.map((row) => Number(row.upside)).filter((value) => Number.isFinite(value));
+  if (!numericUpsides.length) {
+    container.classList.add('is-empty');
+    container.textContent = 'Upside estimates are unavailable for the current results.';
+    return;
+  }
+
+  const minUpside = Math.min(...numericUpsides);
+  const maxUpside = Math.max(...numericUpsides);
+  const sorted = [...rows].sort((a, b) => (b.upside ?? -Infinity) - (a.upside ?? -Infinity));
+  const limited = sorted.slice(0, HEATMAP_LIMIT);
+
+  const grid = document.createElement('div');
+  grid.className = 'market-radar-grid';
+
+  limited.forEach((row, index) => {
+    const cell = document.createElement('div');
+    cell.className = 'market-radar-cell';
+    const heat = computeHeatColor(Number(row.upside), minUpside, maxUpside);
+    if (!heat) {
+      cell.classList.add('is-neutral');
+    } else {
+      cell.style.setProperty('--heat-color', heat.background);
+      cell.style.setProperty('--heat-text', heat.text);
+    }
+    const upsideLabel = fmtPercent(row.upside);
+    const momentumLabel = fmtPercent(row.momentum);
+    const rank = index + 1;
+    cell.title = `${row.symbol} · Upside ${upsideLabel} · Momentum ${momentumLabel} · Rank ${rank}`;
+    cell.innerHTML = `
+      <span class="market-radar-symbol">${row.symbol}</span>
+      <span class="market-radar-metric">Upside ${upsideLabel}</span>
+      <span class="market-radar-details">Momentum ${momentumLabel}</span>
+    `;
+    grid.appendChild(cell);
+  });
+
+  container.appendChild(grid);
+
+  const legend = document.createElement('div');
+  legend.className = 'market-radar-legend';
+  legend.innerHTML = `
+    <span class="legend-label">Low upside</span>
+    <span class="legend-scale" aria-hidden="true"></span>
+    <span class="legend-label">High upside</span>
+  `;
+  container.appendChild(legend);
+
+  if (sorted.length > limited.length) {
+    const footnote = document.createElement('div');
+    footnote.className = 'market-radar-footnote';
+    footnote.textContent = `Displaying top ${limited.length} of ${sorted.length} results by upside.`;
+    container.appendChild(footnote);
+  }
 }
 
 function renderTable(rows) {
   const tbody = $('#screenerTable tbody');
   tbody.innerHTML = '';
+  visibleRows = Array.isArray(rows) ? [...rows] : [];
   rows.forEach((row) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -283,6 +378,7 @@ function attachSortHandlers() {
       const sorted = sortResults(currentResults, currentSort.key, currentSort.direction);
       renderTable(sorted);
       updateSummary(sorted);
+      renderHeatmap(sorted);
     });
   });
 }
@@ -310,12 +406,13 @@ function registerFilterControls() {
 }
 
 function downloadCsv() {
-  if (!currentResults.length) {
-    setStatus('No data to export yet.', 'error');
+  const source = visibleRows.length ? visibleRows : currentResults;
+  if (!source.length) {
+    setStatus('No table data available to export yet.', 'error');
     return;
   }
   const header = ['Symbol', 'Sector', 'MarketCap', 'Price', 'FairValue', 'Upside', 'Momentum', 'Summary'];
-  const lines = currentResults.map((row) => [
+  const lines = source.map((row) => [
     row.symbol,
     row.sector || '',
     Number.isFinite(row.marketCap) ? row.marketCap : '',
@@ -335,7 +432,7 @@ function downloadCsv() {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  setStatus('CSV exported.', 'success');
+  setStatus(`CSV exported with ${source.length} row${source.length === 1 ? '' : 's'}.`, 'success');
 }
 
 function init() {
