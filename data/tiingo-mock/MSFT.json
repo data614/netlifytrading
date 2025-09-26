@@ -1,0 +1,186 @@
+{
+  "symbol": "MSFT",
+  "eod": [
+    {
+      "symbol": "MSFT",
+      "date": "2024-04-26",
+      "open": 409.20,
+      "high": 412.80,
+      "low": 407.55,
+      "close": 411.85,
+      "last": 411.85,
+      "price": 411.85,
+      "previousClose": 410.54,
+      "volume": 27980000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    },
+    {
+      "symbol": "MSFT",
+      "date": "2024-04-29",
+      "open": 413.10,
+      "high": 416.40,
+      "low": 411.30,
+      "close": 415.32,
+      "last": 415.32,
+      "price": 415.32,
+      "previousClose": 411.85,
+      "volume": 26550000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    }
+  ],
+  "intraday": [
+    {
+      "symbol": "MSFT",
+      "date": "2024-04-30T18:30:00Z",
+      "open": 414.60,
+      "high": 415.10,
+      "low": 414.10,
+      "close": 414.95,
+      "last": 414.95,
+      "price": 414.95,
+      "previousClose": 415.32,
+      "volume": 520000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    }
+  ],
+  "quote": {
+    "symbol": "MSFT",
+    "date": "2024-04-30T18:30:00Z",
+    "exchange": "NASDAQ",
+    "open": 413.10,
+    "high": 416.40,
+    "low": 411.30,
+    "close": 415.32,
+    "last": 414.95,
+    "price": 414.95,
+    "previousClose": 415.32,
+    "volume": 26550000,
+    "currency": "USD"
+  },
+  "news": [
+    {
+      "id": "msft-news-1",
+      "headline": "Microsoft expands Copilot integrations",
+      "summary": "New Copilot APIs enable partners to embed AI assistance across products.",
+      "url": "https://example.com/msft/copilot",
+      "source": "SampleWire",
+      "publishedAt": "2024-04-30T14:15:00Z",
+      "sentiment": 0.28,
+      "tags": ["AI", "Partnerships"]
+    }
+  ],
+  "fundamentals": {
+    "symbol": "MSFT",
+    "latest": {
+      "reportDate": "2024-03-31",
+      "totalRevenue": 61700000000,
+      "netIncome": 21900000000,
+      "freeCashFlow": 21000000000,
+      "bookValuePerShare": 25.40,
+      "eps": 2.94,
+      "sharesBasic": 7440000000
+    },
+    "history": [
+      {
+        "reportDate": "2023-12-31",
+        "totalRevenue": 62000000000,
+        "netIncome": 21800000000,
+        "freeCashFlow": 20700000000,
+        "bookValuePerShare": 25.01,
+        "eps": 2.89,
+        "sharesBasic": 7480000000
+      },
+      {
+        "reportDate": "2024-03-31",
+        "totalRevenue": 61700000000,
+        "netIncome": 21900000000,
+        "freeCashFlow": 21000000000,
+        "bookValuePerShare": 25.40,
+        "eps": 2.94,
+        "sharesBasic": 7440000000
+      }
+    ],
+    "metrics": {
+      "sharesOutstanding": 7440000000,
+      "revenue": 61700000000,
+      "netIncome": 21900000000,
+      "freeCashFlow": 21000000000,
+      "earningsPerShare": 2.94,
+      "revenuePerShare": 8.29,
+      "freeCashFlowPerShare": 2.82,
+      "bookValuePerShare": 25.40,
+      "revenueGrowth": -0.0048,
+      "epsGrowth": 0.0173,
+      "fcfGrowth": 0.0145
+    }
+  },
+  "overview": {
+    "symbol": "MSFT",
+    "name": "Microsoft Corporation",
+    "exchange": "NASDAQ",
+    "sector": "Technology",
+    "industry": "Software Infrastructure",
+    "description": "Microsoft develops software, cloud services, and devices for individuals and enterprises.",
+    "website": "https://www.microsoft.com",
+    "marketCap": 3090000000000,
+    "sharesOutstanding": 7440000000,
+    "currency": "USD"
+  },
+  "statements": {
+    "income": [
+      {
+        "reportDate": "2023-12-31",
+        "period": "Q2",
+        "currency": "USD",
+        "revenue": 62000000000,
+        "netIncome": 21800000000,
+        "earningsPerShare": 2.89
+      },
+      {
+        "reportDate": "2024-03-31",
+        "period": "Q3",
+        "currency": "USD",
+        "revenue": 61700000000,
+        "netIncome": 21900000000,
+        "earningsPerShare": 2.94
+      }
+    ],
+    "balanceSheet": [
+      {
+        "reportDate": "2023-12-31",
+        "period": "Q2",
+        "currency": "USD",
+        "totalAssets": 470000000000,
+        "totalLiabilities": 194000000000,
+        "bookValuePerShare": 25.01
+      },
+      {
+        "reportDate": "2024-03-31",
+        "period": "Q3",
+        "currency": "USD",
+        "totalAssets": 472000000000,
+        "totalLiabilities": 192000000000,
+        "bookValuePerShare": 25.40
+      }
+    ],
+    "cashFlow": [
+      {
+        "reportDate": "2023-12-31",
+        "period": "Q2",
+        "currency": "USD",
+        "operatingCashFlow": 23000000000,
+        "freeCashFlow": 20700000000
+      },
+      {
+        "reportDate": "2024-03-31",
+        "period": "Q3",
+        "currency": "USD",
+        "operatingCashFlow": 23300000000,
+        "freeCashFlow": 21000000000
+      }
+    ]
+  }
+}

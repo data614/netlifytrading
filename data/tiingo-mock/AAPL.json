@@ -1,0 +1,296 @@
+{
+  "symbol": "AAPL",
+  "eod": [
+    {
+      "symbol": "AAPL",
+      "date": "2024-04-26",
+      "open": 166.89,
+      "high": 169.17,
+      "low": 165.98,
+      "close": 168.02,
+      "last": 168.02,
+      "price": 168.02,
+      "previousClose": 167.04,
+      "volume": 53482000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    },
+    {
+      "symbol": "AAPL",
+      "date": "2024-04-29",
+      "open": 168.55,
+      "high": 170.10,
+      "low": 168.10,
+      "close": 169.43,
+      "last": 169.43,
+      "price": 169.43,
+      "previousClose": 168.02,
+      "volume": 48562000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    },
+    {
+      "symbol": "AAPL",
+      "date": "2024-04-30",
+      "open": 169.65,
+      "high": 172.21,
+      "low": 169.12,
+      "close": 171.56,
+      "last": 171.56,
+      "price": 171.56,
+      "previousClose": 169.43,
+      "volume": 51243000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    }
+  ],
+  "intraday": [
+    {
+      "symbol": "AAPL",
+      "date": "2024-04-30T18:30:00Z",
+      "open": 169.98,
+      "high": 170.20,
+      "low": 169.70,
+      "close": 169.85,
+      "last": 169.85,
+      "price": 169.85,
+      "previousClose": 171.56,
+      "volume": 820000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    },
+    {
+      "symbol": "AAPL",
+      "date": "2024-04-30T18:35:00Z",
+      "open": 169.85,
+      "high": 170.05,
+      "low": 169.60,
+      "close": 169.72,
+      "last": 169.72,
+      "price": 169.72,
+      "previousClose": 169.85,
+      "volume": 760000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    },
+    {
+      "symbol": "AAPL",
+      "date": "2024-04-30T18:40:00Z",
+      "open": 169.72,
+      "high": 170.10,
+      "low": 169.60,
+      "close": 170.04,
+      "last": 170.04,
+      "price": 170.04,
+      "previousClose": 169.72,
+      "volume": 910000,
+      "exchange": "NASDAQ",
+      "currency": "USD"
+    }
+  ],
+  "quote": {
+    "symbol": "AAPL",
+    "date": "2024-04-30T18:40:00Z",
+    "exchange": "NASDAQ",
+    "open": 169.65,
+    "high": 172.21,
+    "low": 169.12,
+    "close": 171.56,
+    "last": 170.04,
+    "price": 170.04,
+    "previousClose": 171.56,
+    "volume": 51243000,
+    "currency": "USD"
+  },
+  "news": [
+    {
+      "id": "aapl-news-1",
+      "headline": "AAPL announces new product lineup",
+      "summary": "Apple introduced refreshed devices with enhanced AI experiences.",
+      "url": "https://example.com/aapl/product-update",
+      "source": "SampleWire",
+      "publishedAt": "2024-04-30T13:00:00Z",
+      "sentiment": 0.32,
+      "tags": ["Product", "Launch"]
+    },
+    {
+      "id": "aapl-news-2",
+      "headline": "Developers preview VisionOS apps",
+      "summary": "Partners showcased immersive applications built for Vision Pro.",
+      "url": "https://example.com/aapl/visionos",
+      "source": "SampleWire",
+      "publishedAt": "2024-04-29T11:45:00Z",
+      "sentiment": 0.15,
+      "tags": ["Ecosystem", "Developers"]
+    }
+  ],
+  "fundamentals": {
+    "symbol": "AAPL",
+    "latest": {
+      "reportDate": "2024-03-30",
+      "totalRevenue": 118250000000,
+      "netIncome": 33000000000,
+      "freeCashFlow": 31000000000,
+      "bookValuePerShare": 3.82,
+      "eps": 2.10,
+      "sharesBasic": 15600000000
+    },
+    "history": [
+      {
+        "reportDate": "2023-12-30",
+        "totalRevenue": 119580000000,
+        "netIncome": 33916000000,
+        "freeCashFlow": 32600000000,
+        "bookValuePerShare": 3.79,
+        "eps": 2.12,
+        "sharesBasic": 15680000000
+      },
+      {
+        "reportDate": "2024-03-30",
+        "totalRevenue": 118250000000,
+        "netIncome": 33000000000,
+        "freeCashFlow": 31000000000,
+        "bookValuePerShare": 3.82,
+        "eps": 2.10,
+        "sharesBasic": 15600000000
+      }
+    ],
+    "metrics": {
+      "sharesOutstanding": 15600000000,
+      "revenue": 118250000000,
+      "netIncome": 33000000000,
+      "freeCashFlow": 31000000000,
+      "earningsPerShare": 2.1,
+      "revenuePerShare": 7.58,
+      "freeCashFlowPerShare": 1.99,
+      "bookValuePerShare": 3.82,
+      "revenueGrowth": -0.0111,
+      "epsGrowth": -0.0094,
+      "fcfGrowth": -0.0492
+    }
+  },
+  "documents": [
+    {
+      "id": "aapl-doc-1",
+      "headline": "Apple Inc. Form 10-Q",
+      "summary": "Quarterly report for the period ended March 30, 2024.",
+      "url": "https://example.com/aapl/10q",
+      "source": "SEC",
+      "publishedAt": "2024-05-01T12:00:00Z",
+      "documentType": "10-Q",
+      "tags": ["SEC", "10-Q"]
+    }
+  ],
+  "filings": [
+    {
+      "id": "aapl-filing-1",
+      "headline": "Apple Inc. Form 10-Q",
+      "summary": "Quarterly report for the period ended March 30, 2024.",
+      "url": "https://example.com/aapl/10q",
+      "source": "SEC",
+      "publishedAt": "2024-05-01T12:00:00Z",
+      "documentType": "10-Q",
+      "tags": ["SEC", "10-Q"]
+    },
+    {
+      "id": "aapl-filing-2",
+      "headline": "Apple Inc. Form 8-K",
+      "summary": "Current report announcing board authorization of additional buybacks.",
+      "url": "https://example.com/aapl/8k",
+      "source": "SEC",
+      "publishedAt": "2024-04-15T09:30:00Z",
+      "documentType": "8-K",
+      "tags": ["SEC", "8-K"]
+    }
+  ],
+  "actions": {
+    "symbol": "AAPL",
+    "dividends": [
+      {
+        "exDate": "2024-02-09",
+        "amount": 0.24,
+        "payDate": "2024-02-15",
+        "currency": "USD"
+      },
+      {
+        "exDate": "2023-11-10",
+        "amount": 0.24,
+        "payDate": "2023-11-16",
+        "currency": "USD"
+      }
+    ],
+    "splits": [
+      {
+        "exDate": "2020-08-31",
+        "numerator": 4,
+        "denominator": 1
+      }
+    ]
+  },
+  "overview": {
+    "symbol": "AAPL",
+    "name": "Apple Inc.",
+    "exchange": "NASDAQ",
+    "sector": "Technology",
+    "industry": "Consumer Electronics",
+    "description": "Apple designs consumer hardware, software, and services with a focus on privacy and integration.",
+    "website": "https://www.apple.com",
+    "marketCap": 2650000000000,
+    "sharesOutstanding": 15600000000,
+    "currency": "USD"
+  },
+  "statements": {
+    "income": [
+      {
+        "reportDate": "2023-12-30",
+        "period": "Q1",
+        "currency": "USD",
+        "revenue": 119580000000,
+        "netIncome": 33916000000,
+        "earningsPerShare": 2.12
+      },
+      {
+        "reportDate": "2024-03-30",
+        "period": "Q2",
+        "currency": "USD",
+        "revenue": 118250000000,
+        "netIncome": 33000000000,
+        "earningsPerShare": 2.10
+      }
+    ],
+    "balanceSheet": [
+      {
+        "reportDate": "2023-12-30",
+        "period": "Q1",
+        "currency": "USD",
+        "totalAssets": 351000000000,
+        "totalLiabilities": 290000000000,
+        "bookValuePerShare": 3.79
+      },
+      {
+        "reportDate": "2024-03-30",
+        "period": "Q2",
+        "currency": "USD",
+        "totalAssets": 348000000000,
+        "totalLiabilities": 289000000000,
+        "bookValuePerShare": 3.82
+      }
+    ],
+    "cashFlow": [
+      {
+        "reportDate": "2023-12-30",
+        "period": "Q1",
+        "currency": "USD",
+        "operatingCashFlow": 34200000000,
+        "freeCashFlow": 32600000000
+      },
+      {
+        "reportDate": "2024-03-30",
+        "period": "Q2",
+        "currency": "USD",
+        "operatingCashFlow": 32200000000,
+        "freeCashFlow": 31000000000
+      }
+    ]
+  }
+}
