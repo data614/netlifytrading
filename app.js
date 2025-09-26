@@ -1,5 +1,6 @@
 import { createRenderQueue, createRequestCache } from './utils/browser-cache.js';
 import { enrichError, getFriendlyErrorMessage } from './utils/frontend-errors.js';
+import { loadPreferences, updatePreferences } from './utils/user-preferences.js';
 
 const createMemoryStorage = () => {
   const store = new Map();
@@ -44,6 +45,12 @@ if (typeof document === 'undefined') {
     addEventListener: () => {},
   };
 }
+
+let userPreferences = loadPreferences();
+const applyPreferenceUpdate = (patch) => {
+  userPreferences = updatePreferences(patch || {});
+  return userPreferences;
+};
 
 // Minimal frontend logic to fetch from Netlify functions and render the UI
 // Uses the existing _redirects mapping: `/api/* -> /.netlify/functions/:splat`
@@ -210,18 +217,19 @@ async function callTiingo(params, options = {}) {
 
 /* App state */
 let priceChart = null;
-let currentSymbol = 'AAPL';
-let currentSymbolName = 'Apple Inc.';
-let currentExchange = 'XNAS';
-let currentTimeframe = '1D';
+let currentSymbol = userPreferences.symbol || 'AAPL';
+let currentSymbolName = userPreferences.symbolName || 'Apple Inc.';
+let currentExchange = userPreferences.exchange || 'XNAS';
+let currentTimeframe = userPreferences.timeframe || '1D';
 let watchlist = [];
-let selectedExchange = '';
+let selectedExchange = userPreferences.searchExchange || '';
 let searchAbortController = null;
 let searchDebounceTimer = null;
 let searchInputEl = null;
 let searchResultsEl = null;
 let exchangeFilterEl = null;
 let newsAbortController = null;
+let preferredNewsSource = userPreferences.newsSource || 'All';
 const watchlistQuotes = new Map();
 let watchlistRefreshTimer = null;
 const chartEventCache = new Map();
@@ -755,15 +763,25 @@ async function loadNews(source = 'All') {
 function setupNews() {
   const container = $('newsApiButtons');
   if (!container) return;
+  const buttons = Array.from(container.querySelectorAll('button[data-source]'));
+  const availableSources = buttons.map((button) => button.dataset.source || 'All');
+  const initialSource = availableSources.includes(preferredNewsSource) ? preferredNewsSource : 'All';
+  preferredNewsSource = initialSource;
+  buttons.forEach((button) => {
+    const source = button.dataset.source || 'All';
+    button.classList.toggle('active', source === initialSource);
+  });
   container.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-source]');
     if (!button) return;
     container.querySelectorAll('button').forEach((btn) => {
       btn.classList.toggle('active', btn === button);
     });
-    loadNews(button.dataset.source || 'All');
+    preferredNewsSource = button.dataset.source || 'All';
+    applyPreferenceUpdate({ newsSource: preferredNewsSource });
+    loadNews(preferredNewsSource);
   });
-  loadNews('All');
+  loadNews(initialSource);
 }
 
 function normalizeEventTimestamp(value) {
@@ -1362,9 +1380,20 @@ function setupSearch() {
   exchangeFilterEl = $('exchangeFilters');
 
   if (exchangeFilterEl) {
-    selectedExchange = exchangeFilterEl.value || '';
+    if (selectedExchange) {
+      const hasOption = Array.from(exchangeFilterEl.options || []).some((option) => option.value === selectedExchange);
+      if (hasOption) {
+        exchangeFilterEl.value = selectedExchange;
+      } else {
+        selectedExchange = '';
+      }
+    }
+    if (!selectedExchange) {
+      selectedExchange = exchangeFilterEl.value || '';
+    }
     exchangeFilterEl.addEventListener('change', () => {
       selectedExchange = exchangeFilterEl.value || '';
+      applyPreferenceUpdate({ searchExchange: selectedExchange });
       if (searchInputEl && searchInputEl.value.trim().length >= 2) {
         performSearch(searchInputEl.value);
       }
@@ -1876,6 +1905,7 @@ async function loadTimeframe(tf, { force = false } = {}) {
   timeframeLoading = true;
   currentTimeframe = target;
   updateTimeframeButtons(target);
+  applyPreferenceUpdate({ timeframe: currentTimeframe });
   try {
     const { intraday, interval, limit } = tfParams(target);
     const params = intraday
@@ -1908,6 +1938,11 @@ async function loadSymbol(symbol, name, exchange) {
   if (exchange) {
     currentExchange = String(exchange).toUpperCase();
   }
+  applyPreferenceUpdate({
+    symbol: currentSymbol,
+    symbolName: currentSymbolName,
+    exchange: currentExchange || '',
+  });
   $('stockSymbol').textContent = currentSymbol;
   $('stockName').textContent = currentSymbolName;
   $('exchangeAcronym').textContent = currentExchange ? ` ${currentExchange}` : '';
