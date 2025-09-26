@@ -11,3 +11,4 @@ AI Analyst, Quant Screener, Valuation Lab, and Professional Desk experiences.
 ### Documentation
 
 - Platform usage guide: [`docs/platform-user-guide.md`](docs/platform-user-guide.md)
+- Netlify staging deployment guide: [`docs/devops/netlify-staging-deploy.md`](docs/devops/netlify-staging-deploy.md)

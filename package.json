@@ -9,7 +9,8 @@
     "generate:symbols": "node scripts/build-symbols.mjs",
     "peer-review:inventory": "node scripts/peer-review/generate-file-inventory.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy:staging": "node scripts/deploy-staging.mjs"
   },
   "devDependencies": {
     "cross-env": "^10.0.0",
