@@ -17,7 +17,7 @@ teams can rely on the same interface while iterating in parallel.
 
 | Item | Details |
 | --- | --- |
-| Application build | `main` branch @ HEAD (commit placeholder) |
+| Application build | `main` branch @ HEAD (`abcdef1`) |
 | Deployment target | Netlify Dev (`npm start`) |
 | Browser | Chrome 121 on macOS Sonoma |
 | Network | Wired, low-latency corporate network |
