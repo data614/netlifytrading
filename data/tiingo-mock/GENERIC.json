@@ -1,0 +1,138 @@
+{
+  "symbol": "GENERIC",
+  "eod": [
+    {
+      "symbol": "GENERIC",
+      "date": "2024-01-02",
+      "open": 50.12,
+      "high": 50.90,
+      "low": 49.70,
+      "close": 50.55,
+      "last": 50.55,
+      "price": 50.55,
+      "previousClose": 50.00,
+      "volume": 1020000,
+      "exchange": "NYSE",
+      "currency": "USD"
+    }
+  ],
+  "intraday": [
+    {
+      "symbol": "GENERIC",
+      "date": "2024-01-02T15:35:00Z",
+      "open": 50.40,
+      "high": 50.60,
+      "low": 50.32,
+      "close": 50.55,
+      "last": 50.55,
+      "price": 50.55,
+      "previousClose": 50.00,
+      "volume": 12000,
+      "exchange": "NYSE",
+      "currency": "USD"
+    }
+  ],
+  "quote": {
+    "symbol": "GENERIC",
+    "date": "2024-01-02T15:35:00Z",
+    "exchange": "NYSE",
+    "open": 50.12,
+    "high": 50.90,
+    "low": 49.70,
+    "close": 50.55,
+    "last": 50.55,
+    "price": 50.55,
+    "previousClose": 50.00,
+    "volume": 1020000,
+    "currency": "USD"
+  },
+  "news": [],
+  "fundamentals": {
+    "symbol": "GENERIC",
+    "latest": {
+      "reportDate": "2023-12-31",
+      "totalRevenue": 2500000000,
+      "netIncome": 250000000,
+      "freeCashFlow": 210000000,
+      "bookValuePerShare": 12.5,
+      "eps": 1.25,
+      "sharesBasic": 200000000
+    },
+    "history": [
+      {
+        "reportDate": "2023-09-30",
+        "totalRevenue": 2450000000,
+        "netIncome": 240000000,
+        "freeCashFlow": 205000000,
+        "bookValuePerShare": 12.2,
+        "eps": 1.20,
+        "sharesBasic": 201000000
+      },
+      {
+        "reportDate": "2023-12-31",
+        "totalRevenue": 2500000000,
+        "netIncome": 250000000,
+        "freeCashFlow": 210000000,
+        "bookValuePerShare": 12.5,
+        "eps": 1.25,
+        "sharesBasic": 200000000
+      }
+    ],
+    "metrics": {
+      "sharesOutstanding": 200000000,
+      "revenue": 2500000000,
+      "netIncome": 250000000,
+      "freeCashFlow": 210000000,
+      "earningsPerShare": 1.25,
+      "revenuePerShare": 12.5,
+      "freeCashFlowPerShare": 1.05,
+      "bookValuePerShare": 12.5,
+      "revenueGrowth": 0.0204,
+      "epsGrowth": 0.0417,
+      "fcfGrowth": 0.0244
+    }
+  },
+  "overview": {
+    "symbol": "GENERIC",
+    "name": "Generic Holdings",
+    "exchange": "NYSE",
+    "sector": "Industrials",
+    "industry": "Diversified Manufacturing",
+    "description": "Generic Holdings supplies demonstration components for developer tooling.",
+    "website": "https://example.com/generic",
+    "marketCap": 10250000000,
+    "sharesOutstanding": 200000000,
+    "currency": "USD"
+  },
+  "statements": {
+    "income": [
+      {
+        "reportDate": "2023-12-31",
+        "period": "FY",
+        "currency": "USD",
+        "revenue": 2500000000,
+        "netIncome": 250000000,
+        "earningsPerShare": 1.25
+      }
+    ],
+    "balanceSheet": [
+      {
+        "reportDate": "2023-12-31",
+        "period": "FY",
+        "currency": "USD",
+        "totalAssets": 4800000000,
+        "totalLiabilities": 2100000000,
+        "bookValuePerShare": 12.5
+      }
+    ],
+    "cashFlow": [
+      {
+        "reportDate": "2023-12-31",
+        "period": "FY",
+        "currency": "USD",
+        "operatingCashFlow": 230000000,
+        "freeCashFlow": 210000000
+      }
+    ]
+  }
+}

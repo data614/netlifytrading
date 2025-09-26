@@ -4,10 +4,15 @@ import {
   loadIntraday,
   loadFundamentals,
   loadCompanyNews,
+  loadCompanyOverview,
+  loadFinancialStatements,
+  loadSecFilings,
   loadValuation,
-} from '../netlify/functions/tiingo.js';
+  __private,
+} from '../netlify/functions/tiingo-data.js';
 
 const TOKEN = 'test-token';
+const { respondWithMock } = __private;
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -57,6 +62,69 @@ describe('tiingo data loaders', () => {
     expect(fundamentals.metrics.epsGrowth).toBeGreaterThan(0);
   });
 
+  it('normalizes financial statements into consistent sections', async () => {
+    const statementsPayload = {
+      incomeStatement: [
+        {
+          statementType: 'Income Statement',
+          reportDate: '2024-03-31',
+          data: [
+            { label: 'Total Revenue', value: '1000' },
+            { label: 'Net Income', value: 120 },
+          ],
+        },
+      ],
+      balanceSheet: {
+        statementData: [
+          {
+            reportDate: '2024-03-31',
+            data: [
+              { label: 'Total Assets', value: 4000 },
+              { label: 'Total Liabilities', value: 2500 },
+            ],
+          },
+        ],
+      },
+      cashFlowStatement: [
+        {
+          statementType: 'Cash Flow Statement',
+          reportDate: '2024-03-31',
+          data: [
+            { label: 'Operating Cash Flow', value: '300' },
+            { label: 'Free Cash Flow', value: '250' },
+          ],
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(statementsPayload)));
+
+    const statements = await loadFinancialStatements('TEST', TOKEN, 3);
+    expect(statements.income[0].totalRevenue).toBe(1000);
+    expect(statements.balanceSheet[0].totalAssets).toBe(4000);
+    expect(statements.cashFlow[0].operatingCashFlow).toBe(300);
+  });
+
+  it('returns normalized overview data', async () => {
+    const overviewPayload = {
+      name: 'Test Corp',
+      exchangeCode: 'NYSE',
+      sector: 'Finance',
+      industry: 'Banking',
+      description: 'A diversified bank.',
+      website: 'https://example.com/test',
+      marketCap: '123456',
+      sharesOutstanding: '789',
+      currency: 'USD',
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(overviewPayload)));
+
+    const overview = await loadCompanyOverview('TEST', TOKEN);
+    expect(overview.name).toBe('Test Corp');
+    expect(overview.exchange).toBe('NYSE');
+    expect(overview.marketCap).toBe(123456);
+    expect(overview.sharesOutstanding).toBe(789);
+  });
+
   it('normalizes company news ordering', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([
       { publishedDate: '2023-06-02T00:00:00Z', title: 'Older', sentiment: 0.1 },
@@ -66,6 +134,22 @@ describe('tiingo data loaders', () => {
     const news = await loadCompanyNews('TEST', 5, TOKEN);
     expect(news[0].headline).toBe('Newer');
     expect(news[0].sentiment).toBe(-0.3);
+  });
+
+  it('maps SEC filings from news payloads', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      const url = new URL(input);
+      expect(url.pathname).toContain('/tiingo/news');
+      return jsonResponse([
+        { id: 1, title: 'Form 10-K', tags: ['SEC', '10-K'], publishedDate: '2024-02-01T00:00:00Z' },
+        { id: 2, title: 'Earnings Release', tags: ['Earnings'], publishedDate: '2024-01-15T00:00:00Z' },
+      ]);
+    }));
+
+    const filings = await loadSecFilings('TEST', 5, TOKEN);
+    expect(filings).toHaveLength(2);
+    expect(filings[0].documentType).toBe('10-K');
+    expect(filings[1].documentType).toBe('Filing');
   });
 
   it('assembles valuation snapshot with quote and fundamentals', async () => {
@@ -87,5 +171,14 @@ describe('tiingo data loaders', () => {
     expect(valuation.price).toBe(105);
     expect(valuation.valuation.fairValue).toBeGreaterThan(0);
     expect(valuation.narrative).toMatch(/TEST/);
+  });
+
+  it('falls back to file-backed mock data when live calls fail', async () => {
+    const response = await respondWithMock('overview', 'AAPL', 5, 'Mock fallback', { reason: 'test' });
+    expect(response.headers.get('x-tiingo-source')).toBe('mock');
+    const payload = await response.json();
+    expect(payload.data.name).toBe('Apple Inc.');
+    expect(payload.meta.mockSource).toBe('file:symbol');
+    expect(payload.meta.source).toBe('mock');
   });
 });

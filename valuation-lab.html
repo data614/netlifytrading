@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Valuation Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./professional/pro-shared.css" />
+    <script type="module" src="./professional/valuation-lab.js" defer></script>
+  </head>
+  <body>
+    <div class="pro-app-shell">
+      <aside class="pro-sidebar">
+        <section class="pro-card pro-brand fade-in">
+          <h1>Valuation Lab</h1>
+          <p>Scenario-driven valuation canvas for analysts calibrating intrinsic value frameworks.</p>
+        </section>
+        <section class="pro-card pro-mini-card fade-in" style="animation-delay: 0.05s">
+          <h3>Methodology</h3>
+          <p>Blend DCF, earnings power, revenue multiples, and book value benchmarks with configurable growth paths.</p>
+        </section>
+        <section class="pro-card pro-mini-card fade-in" style="animation-delay: 0.1s">
+          <h3>Team Notes</h3>
+          <p>Align research assumptions across teams and surface the consensus entry ranges for <span data-active-symbol>AAPL</span>.</p>
+        </section>
+        <section class="pro-card pro-mini-card fade-in" style="animation-delay: 0.15s">
+          <h3>Pending Tasks</h3>
+          <ul>
+            <li>Upload refreshed factor model</li>
+            <li>Review macro overlay</li>
+            <li>Sync alternative data feed</li>
+          </ul>
+        </section>
+      </aside>
+      <main class="pro-main">
+        <header class="pro-card pro-toolbar fade-in">
+          <div class="pro-symbol-controls" id="valuation-symbol-controls"></div>
+          <div class="pro-chart-meta">
+            <div class="symbol" data-active-symbol>AAPL</div>
+            <div id="valuation-status"></div>
+          </div>
+        </header>
+        <section class="pro-card fade-in" style="animation-delay: 0.08s">
+          <header class="pro-chart-meta">
+            <div>
+              <div class="symbol" data-active-symbol>AAPL</div>
+              <div class="muted">Intrinsic Value Dashboard</div>
+            </div>
+            <div class="valuation-tag" id="valuation-bias">Neutral</div>
+          </header>
+          <div class="valuation-metrics" id="valuation-metrics">
+            <div class="valuation-metric">
+              <span>Last Price</span>
+              <strong id="valuation-last-price">—</strong>
+            </div>
+            <div class="valuation-metric">
+              <span>Fair Value</span>
+              <strong id="valuation-fair-value">—</strong>
+            </div>
+            <div class="valuation-metric">
+              <span>Suggested Entry</span>
+              <strong id="valuation-entry">—</strong>
+            </div>
+            <div class="valuation-metric">
+              <span>Upside</span>
+              <strong id="valuation-upside">—</strong>
+            </div>
+          </div>
+        </section>
+        <section class="pro-card fade-in" style="animation-delay: 0.12s">
+          <h3>Scenario Map</h3>
+          <table class="valuation-table" id="valuation-scenarios">
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th>Value</th>
+                <th>Delta vs Price</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
+        <section class="pro-card fade-in" style="animation-delay: 0.16s">
+          <h3>Narrative</h3>
+          <p class="valuation-narrative" id="valuation-narrative">
+            Loading valuation narrative for <span data-active-symbol>AAPL</span>…
+          </p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
