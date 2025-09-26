@@ -1,4 +1,5 @@
 import { gatherSymbolIntel } from './aiAnalyst.js';
+import { logError } from './lib/security.js';
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const corsHeaders = {
@@ -108,8 +109,7 @@ const gatherInBatches = async (symbols, { limit, timeframe, concurrency = DEFAUL
           if (warningEntry) warnings.push(warningEntry);
         }
       } catch (error) {
-        console.error('Batch intel failed', symbol, error);
-        const message = error?.message || 'Failed to load intelligence.';
+        const message = logError(`Batch intel failed for ${symbol}`, error, { fallback: 'Failed to load intelligence.' });
         errors.push({ symbol, message });
         results[currentIndex] = { symbol, error: true, message };
       }
@@ -179,7 +179,7 @@ export async function handleRequest(request) {
     };
     return Response.json(responseBody, { headers: corsHeaders });
   } catch (error) {
-    console.error('Batch handler failed', error);
+    logError('Batch handler failed', error);
     return Response.json({ error: 'AI analyst batch request failed.' }, { status: 500, headers: corsHeaders });
   }
 }

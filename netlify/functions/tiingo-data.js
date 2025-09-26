@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { getTiingoToken, TIINGO_TOKEN_ENV_KEYS } from './lib/env.js';
 import { createCache } from './lib/cache.js';
 import buildValuationSnapshot, { summarizeValuationNarrative, valuationUtils } from './lib/valuation.js';
+import { logError } from './lib/security.js';
 
 // --- Configuration & Constants ---
 
@@ -1080,10 +1081,10 @@ async function handleTiingoRequest(request) {
     }
     return respondWithMock(kind, symbol, limit, 'EOD unavailable. Showing sample data.', { reason: 'eod_unavailable' });
   } catch (err) {
-    console.error(`Tiingo request failed for ${symbol}:`, err);
+    const message = logError(`Tiingo request failed for ${symbol}`, err, { maxLength: 200 });
     return respondWithMock(kind, symbol, limit, 'Tiingo request failed. Showing sample data.', {
       reason: 'exception',
-      message: err?.message?.slice(0, 200) || String(err),
+      message,
     });
   }
 }

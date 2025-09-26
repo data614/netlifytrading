@@ -9,6 +9,7 @@ import {
   __private as tiingoMock,
 } from './tiingo.js';
 import buildValuationSnapshot, { summarizeValuationNarrative } from './lib/valuation.js';
+import { logError } from './lib/security.js';
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const corsHeaders = { 'access-control-allow-origin': ALLOWED_ORIGIN };
@@ -240,7 +241,7 @@ export async function handleRequest(request) {
     const intel = await gatherSymbolIntel(symbol, { limit, timeframe });
     return ok({ symbol, data: intel }, intel.warning);
   } catch (error) {
-    console.error('AI analyst failed', error);
+    logError('AI analyst failed', error);
     const fallback = await gatherSymbolIntel(symbol, { limit, timeframe }).catch(() => null);
     if (fallback) {
       return ok({ symbol, data: fallback }, 'AI analyst fallback using simulated data.');
