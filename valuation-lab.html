@@ -70,7 +70,15 @@
           </div>
         </section>
         <section class="pro-card fade-in" style="animation-delay: 0.12s">
-          <h3>Scenario Map</h3>
+          <header class="pro-chart-meta">
+            <div>
+              <h3>Scenario Map</h3>
+              <div class="muted">Align bull, base, and bear targets against the live tape.</div>
+            </div>
+            <button class="valuation-inline-button" type="button" id="valuation-export-scenarios">
+              Export CSV
+            </button>
+          </header>
           <table class="valuation-table" id="valuation-scenarios">
             <thead>
               <tr>
@@ -82,7 +90,228 @@
             <tbody></tbody>
           </table>
         </section>
-        <section class="pro-card fade-in" style="animation-delay: 0.16s">
+        <section class="pro-card valuation-visual-block fade-in" style="animation-delay: 0.16s">
+          <header class="pro-chart-meta">
+            <div>
+              <h3>Integrated Valuation Surface</h3>
+              <div class="muted">Overlay discounted cash flows, multiples, and residual income diagnostics.</div>
+            </div>
+            <div class="valuation-legend">
+              <span data-legend="dcf">DCF</span>
+              <span data-legend="multiples">Multiples</span>
+              <span data-legend="residual">Residual Income</span>
+            </div>
+          </header>
+          <div class="valuation-visuals-grid">
+            <div class="valuation-visual">
+              <div class="valuation-visual-header">
+                <h4>Discounted Cash Flow Trajectory</h4>
+                <div class="valuation-visual-meta">10 year horizon · Unlevered</div>
+              </div>
+              <div
+                class="valuation-visual-canvas"
+                id="valuation-dcf-chart"
+                role="img"
+                aria-label="Line chart placeholder for discounted cash flow projections"
+              ></div>
+            </div>
+            <div class="valuation-visual">
+              <div class="valuation-visual-header">
+                <h4>EV / EBITDA Fair Value Bands</h4>
+                <div class="valuation-visual-meta">Trailing vs forward blend</div>
+              </div>
+              <div
+                class="valuation-visual-canvas"
+                id="valuation-multiples-chart"
+                role="img"
+                aria-label="Area chart placeholder for valuation multiples"
+              ></div>
+            </div>
+            <div class="valuation-visual">
+              <div class="valuation-visual-header">
+                <h4>Residual Income Convergence</h4>
+                <div class="valuation-visual-meta">Economic profit attribution</div>
+              </div>
+              <div
+                class="valuation-visual-canvas"
+                id="valuation-residual-chart"
+                role="img"
+                aria-label="Heatmap placeholder for residual income convergence"
+              ></div>
+            </div>
+          </div>
+        </section>
+        <section class="pro-card valuation-controls fade-in" style="animation-delay: 0.2s">
+          <header class="pro-chart-meta">
+            <div>
+              <h3>Scenario Controls &amp; Overrides</h3>
+              <div class="muted">Fine-tune macro overlays and operating cadence to align the valuation stack.</div>
+            </div>
+            <div class="valuation-control-actions">
+              <button class="valuation-inline-button" type="button" id="valuation-reset-controls">Reset</button>
+              <button class="valuation-inline-button accent" type="button" id="valuation-apply-controls">Apply</button>
+            </div>
+          </header>
+          <div class="valuation-controls-grid">
+            <div class="valuation-control-panel">
+              <h4>Growth Path</h4>
+              <div class="valuation-control-group">
+                <label for="valuation-revenue-cagr">Revenue CAGR</label>
+                <div class="valuation-slider">
+                  <input type="range" id="valuation-revenue-cagr" min="0" max="30" value="12" />
+                  <output id="valuation-revenue-cagr-value">12%</output>
+                </div>
+              </div>
+              <div class="valuation-control-group">
+                <label for="valuation-terminal-growth">Terminal Growth</label>
+                <select id="valuation-terminal-growth">
+                  <option value="2">2%</option>
+                  <option value="3" selected>3%</option>
+                  <option value="4">4%</option>
+                  <option value="5">5%</option>
+                </select>
+              </div>
+              <div class="valuation-toggle-group" id="valuation-growth-mode-group" role="group" aria-label="Growth regime">
+                <button class="valuation-toggle active" type="button" data-mode="accelerating">Accelerating</button>
+                <button class="valuation-toggle" type="button" data-mode="steady">Steady</button>
+                <button class="valuation-toggle" type="button" data-mode="decelerating">Decelerating</button>
+              </div>
+            </div>
+            <div class="valuation-control-panel">
+              <h4>Margin Structure</h4>
+              <div class="valuation-control-group">
+                <label for="valuation-ebitda-margin">EBITDA Margin Target</label>
+                <div class="valuation-slider">
+                  <input type="range" id="valuation-ebitda-margin" min="5" max="45" value="28" />
+                  <output id="valuation-ebitda-margin-value">28%</output>
+                </div>
+              </div>
+              <div class="valuation-control-group inline">
+                <div>
+                  <label for="valuation-operating-leverage">Operating Leverage</label>
+                  <select id="valuation-operating-leverage">
+                    <option value="light">Asset Light</option>
+                    <option value="balanced" selected>Balanced</option>
+                    <option value="capital-intensive">Capital Intensive</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="valuation-fcf-conversion">FCF Conversion</label>
+                  <input type="number" id="valuation-fcf-conversion" value="85" min="0" max="120" />
+                </div>
+              </div>
+              <div class="valuation-toggle-group" id="valuation-cost-mode-group" role="group" aria-label="Cost structure focus">
+                <button class="valuation-toggle active" type="button" data-mode="opex">Opex Discipline</button>
+                <button class="valuation-toggle" type="button" data-mode="capex">Capex Flex</button>
+              </div>
+            </div>
+            <div class="valuation-control-panel">
+              <h4>Capital Structure</h4>
+              <div class="valuation-control-group">
+                <label for="valuation-discount-rate">Discount Rate</label>
+                <div class="valuation-slider">
+                  <input type="range" id="valuation-discount-rate" min="4" max="14" value="8" />
+                  <output id="valuation-discount-rate-value">8%</output>
+                </div>
+              </div>
+              <div class="valuation-control-group inline">
+                <div>
+                  <label for="valuation-debt-ratio">Net Debt / EBITDA</label>
+                  <input type="number" id="valuation-debt-ratio" value="0.8" min="0" max="6" step="0.1" />
+                </div>
+                <div>
+                  <label for="valuation-share-buyback">Buyback Pace</label>
+                  <select id="valuation-share-buyback">
+                    <option value="paused">Paused</option>
+                    <option value="neutral" selected>Neutral</option>
+                    <option value="aggressive">Aggressive</option>
+                  </select>
+                </div>
+              </div>
+              <div class="valuation-note">
+                Weighted average cost of capital recalculates automatically when inputs shift.
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="pro-card valuation-diagnostics fade-in" style="animation-delay: 0.24s">
+          <header class="pro-chart-meta">
+            <div>
+              <h3>Model Diagnostics</h3>
+              <div class="muted">Track dispersion, scenario confidence, and factor sensitivities.</div>
+            </div>
+            <div class="valuation-badges">
+              <span class="valuation-badge" data-variant="balanced">Balanced</span>
+              <span class="valuation-badge" data-variant="risk">Risk-On</span>
+            </div>
+          </header>
+          <div class="valuation-diagnostics-grid">
+            <div class="valuation-diagnostic">
+              <div class="valuation-diagnostic-header">
+                <h4>Monte Carlo Dispersion</h4>
+                <span class="valuation-diagnostic-meta">5k paths</span>
+              </div>
+              <div class="valuation-visual-canvas" id="valuation-monte-carlo" role="img" aria-label="Distribution chart placeholder"></div>
+            </div>
+            <div class="valuation-diagnostic">
+              <div class="valuation-diagnostic-header">
+                <h4>Sensitivity Heatmap</h4>
+                <span class="valuation-diagnostic-meta">Δ Fair Value vs Drivers</span>
+              </div>
+              <table class="valuation-heatmap" id="valuation-sensitivity">
+                <tbody>
+                  <tr>
+                    <th>Revenue Growth</th>
+                    <td data-trend="positive">+0.8x</td>
+                    <td data-trend="neutral">+0.2x</td>
+                    <td data-trend="negative">−0.4x</td>
+                  </tr>
+                  <tr>
+                    <th>Margins</th>
+                    <td data-trend="positive">+1.1x</td>
+                    <td data-trend="neutral">+0.3x</td>
+                    <td data-trend="negative">−0.6x</td>
+                  </tr>
+                  <tr>
+                    <th>Discount Rate</th>
+                    <td data-trend="negative">−0.9x</td>
+                    <td data-trend="negative">−0.5x</td>
+                    <td data-trend="neutral">+0.1x</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="valuation-diagnostic">
+              <div class="valuation-diagnostic-header">
+                <h4>Peer Relative Positioning</h4>
+                <span class="valuation-diagnostic-meta">vs Sector Median</span>
+              </div>
+              <div class="valuation-peer-grid" id="valuation-peer-tiles">
+                <div class="valuation-peer-tile">
+                  <span class="label">P/E</span>
+                  <strong>+1.6σ</strong>
+                  <small>Premium</small>
+                </div>
+                <div class="valuation-peer-tile">
+                  <span class="label">EV/Sales</span>
+                  <strong>+0.9σ</strong>
+                  <small>Slight Premium</small>
+                </div>
+                <div class="valuation-peer-tile">
+                  <span class="label">FCF Yield</span>
+                  <strong>−0.4σ</strong>
+                  <small>Discount</small>
+                </div>
+                <div class="valuation-peer-tile">
+                  <span class="label">Rule of 40</span>
+                  <strong>+1.2σ</strong>
+                  <small>Leadership</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="pro-card fade-in" style="animation-delay: 0.28s">
           <h3>Narrative</h3>
           <p class="valuation-narrative" id="valuation-narrative">
             Loading valuation narrative for <span data-active-symbol>AAPL</span>…
