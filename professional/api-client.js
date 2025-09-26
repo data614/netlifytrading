@@ -60,6 +60,20 @@ export async function fetchLatestQuote(symbol) {
   return { symbol: payload?.symbol || upper, row: rows[0] || null, meta: payload?.meta || {}, warning: payload?.warning || '' };
 }
 
+export async function fetchCompanyNews(symbol, { limit = 20 } = {}) {
+  const upper = (symbol || '').trim().toUpperCase() || 'AAPL';
+  const payload = await requestTiingo({ symbol: upper, kind: 'news', limit });
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  return { symbol: payload?.symbol || upper, rows, meta: payload?.meta || {}, warning: payload?.warning || '' };
+}
+
+export async function fetchSecFilings(symbol, { limit = 20 } = {}) {
+  const upper = (symbol || '').trim().toUpperCase() || 'AAPL';
+  const payload = await requestTiingo({ symbol: upper, kind: 'filings', limit });
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  return { symbol: payload?.symbol || upper, rows, meta: payload?.meta || {}, warning: payload?.warning || '' };
+}
+
 export function describeRange(rangeKey) {
   switch (rangeKey) {
     case '1D':

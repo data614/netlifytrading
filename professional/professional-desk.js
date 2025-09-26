@@ -1,5 +1,13 @@
 import { createSymbolInput, createRangeSelector, createStatusBanner, createLoadingOverlay } from './ui-components.js';
-import { fetchPriceHistory, fetchLatestQuote, AVAILABLE_RANGES, describeRange } from './api-client.js';
+import {
+  fetchPriceHistory,
+  fetchLatestQuote,
+  fetchCompanyNews,
+  fetchSecFilings,
+  AVAILABLE_RANGES,
+  describeRange,
+} from './api-client.js';
+import { createNewsFeed, createFilingsFeed, createMarketRadarShell, createDocumentViewer } from './feeds.js';
 
 const state = {
   symbol: 'AAPL',
@@ -8,12 +16,21 @@ const state = {
   chartCtx: null,
   loading: false,
   lastQuote: null,
+  filings: [],
+  selectedFilingId: null,
 };
 
 const statusBanner = createStatusBanner();
 let symbolControl;
 let rangeSelector;
 let loadingOverlay;
+let newsFeed;
+let filingsFeed;
+let documentViewer;
+let marketRadarShell;
+
+const getFilingId = (item) =>
+  item?.id || item?.url || (item?.documentType ? `${item.documentType}-${item?.publishedAt || ''}` : item?.publishedAt || '');
 
 function registerZoomPlugin() {
   const zoomPlugin = window?.ChartZoom || window?.chartjs_plugin_zoom;
@@ -179,6 +196,60 @@ function updateQuoteDisplay(quote) {
   }
 }
 
+async function refreshNews() {
+  if (!newsFeed) return;
+  newsFeed.setLoading(true);
+  try {
+    const data = await fetchCompanyNews(state.symbol, { limit: 20 });
+    newsFeed.update(data);
+  } catch (error) {
+    console.error(error);
+    newsFeed.update({ rows: [], meta: { source: 'mock', reason: 'news_error' }, warning: error?.message || 'Unable to load news.' });
+  } finally {
+    newsFeed.setLoading(false);
+  }
+}
+
+async function refreshFilings() {
+  if (!filingsFeed) return;
+  filingsFeed.setLoading(true);
+  try {
+    const data = await fetchSecFilings(state.symbol, { limit: 12 });
+    state.filings = Array.isArray(data.rows) ? data.rows : [];
+    filingsFeed.update(data);
+    if (state.filings.length) {
+      const existing = state.filings.find((item) => getFilingId(item) === state.selectedFilingId);
+      const next = existing || state.filings[0];
+      const nextId = getFilingId(next);
+      if (nextId) {
+        state.selectedFilingId = nextId;
+        documentViewer?.setDocument(next);
+        filingsFeed.setActive?.(nextId);
+      }
+    } else {
+      state.selectedFilingId = null;
+      documentViewer?.clear?.();
+      filingsFeed.setActive?.('');
+    }
+  } catch (error) {
+    console.error(error);
+    filingsFeed.update({
+      rows: [],
+      meta: { source: 'mock', reason: 'filings_error' },
+      warning: error?.message || 'Unable to load filings.',
+    });
+    state.filings = [];
+    state.selectedFilingId = null;
+    documentViewer?.clear?.();
+  } finally {
+    filingsFeed.setLoading(false);
+  }
+}
+
+async function refreshIntel() {
+  await Promise.all([refreshNews(), refreshFilings()]);
+}
+
 async function refreshData() {
   if (!state.symbol) return;
   setLoading(true);
@@ -216,6 +287,9 @@ function handleSymbolChange(symbol) {
     });
   }
   refreshData();
+  state.selectedFilingId = null;
+  documentViewer?.clear?.();
+  refreshIntel();
 }
 
 function handleRangeChange(range) {
@@ -245,6 +319,8 @@ function init() {
   const statusHost = document.getElementById('status-host');
   const chartCard = document.querySelector('.pro-chart-card');
   const canvas = document.getElementById('price-history');
+  const intelStreams = document.getElementById('intel-streams');
+  const intelTools = document.getElementById('intel-tools');
 
   if (!controls || !canvas || !chartCard) {
     console.warn('Professional desk shell missing required elements');
@@ -270,12 +346,42 @@ function init() {
 
   state.chartCtx = canvas.getContext('2d');
 
+  if (intelStreams) {
+    newsFeed = createNewsFeed();
+    filingsFeed = createFilingsFeed({
+      onPreview: (item) => {
+        const nextId = getFilingId(item);
+        if (!nextId) return;
+        state.selectedFilingId = nextId;
+        documentViewer?.setDocument(item);
+        filingsFeed.setActive?.(nextId);
+      },
+    });
+    intelStreams.innerHTML = '';
+    intelStreams.append(newsFeed.element, filingsFeed.element);
+  }
+
+  if (intelTools) {
+    marketRadarShell = createMarketRadarShell({
+      screenerUrl: 'quant-screener.html',
+      analystUrl: 'ai-analyst.html',
+      additionalLinks: [
+        { label: 'Valuation Lab', href: 'valuation-lab.html', target: '_self' },
+        { label: 'AI Analyst', href: 'ai-analyst.html', target: '_self' },
+      ],
+    });
+    documentViewer = createDocumentViewer();
+    intelTools.innerHTML = '';
+    intelTools.append(marketRadarShell.element, documentViewer.element);
+  }
+
   hydrateWatchlist();
   document.querySelectorAll('[data-active-symbol]').forEach((el) => {
     el.textContent = state.symbol;
   });
 
   refreshData();
+  refreshIntel();
 }
 
 if (document.readyState === 'loading') {
