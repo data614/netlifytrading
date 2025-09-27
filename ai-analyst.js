@@ -1,6 +1,7 @@
 import { computeValuationScores, VALUATION_RADAR_LABELS } from './utils/valuation-scorer.js';
 import { enrichError } from './utils/frontend-errors.js';
 import normalizeAiAnalystPayload from './utils/ai-analyst-normalizer.js';
+import initBatchResultsModule from './ai-analyst-batch-table.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -65,6 +66,27 @@ const setMetricBar = (id, score) => {
     el.style.width = '0%';
     el.setAttribute('aria-valuenow', '0');
   }
+};
+
+const toggleHidden = (element, isHidden) => {
+  if (!element) return;
+  element.hidden = Boolean(isHidden);
+};
+
+const clearElement = (element) => {
+  if (!element) return;
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+};
+
+const renderPlaceholderList = (element, message) => {
+  if (!element) return;
+  clearElement(element);
+  const placeholder = document.createElement('li');
+  placeholder.className = 'placeholder-item';
+  placeholder.textContent = message;
+  element.appendChild(placeholder);
 };
 
 const buttonSpinnerHtml = (label) =>
@@ -201,6 +223,289 @@ const renderValuationPanel = (valuationRoot = {}) => {
 
   setElementText('valuationRadarCaption', describeCompositeCaption(availableCount));
   renderValuationBreakdown(breakdown);
+};
+
+const setNarrativeLoading = (isLoading) => {
+  const loadingStrip = document.getElementById('aiNarrativeLoading');
+  toggleHidden(loadingStrip, !isLoading);
+  const panel = document.getElementById('aiNarrativePanel');
+  if (panel) {
+    if (isLoading) {
+      panel.setAttribute('aria-busy', 'true');
+    } else {
+      panel.removeAttribute('aria-busy');
+    }
+  }
+};
+
+const preparePanelsForLoading = ({ symbol }) => {
+  setNarrativeLoading(true);
+  renderNarrative({ summary: '', symbol, loading: true });
+  renderTimeline([], { loading: true });
+  renderDocuments([], { loading: true });
+  renderNewsList([], { loading: true });
+  renderPriceChart([], { loading: true });
+};
+
+const renderNarrative = ({ summary, symbol, generatedAt, loading = false }) => {
+  const panel = document.getElementById('aiNarrativePanel');
+  if (!panel) return;
+
+  clearElement(panel);
+
+  const normalizedSummary = typeof summary === 'string' ? summary.trim() : '';
+  const blocks = normalizedSummary ? normalizedSummary.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean) : [];
+
+  if (!blocks.length) {
+    const placeholder = document.createElement('p');
+    placeholder.className = 'ai-summary placeholder';
+    placeholder.textContent = loading
+      ? 'Generating analyst narrative…'
+      : 'AI narrative is not available for this symbol yet. Try refreshing the analysis.';
+    panel.appendChild(placeholder);
+  } else {
+    blocks.forEach((block) => {
+      const bulletLines = block
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const bulletCandidates = bulletLines.filter((line) => /^[-*•]\s+/.test(line));
+
+      if (bulletCandidates.length >= 2 && bulletCandidates.length === bulletLines.length) {
+        const list = document.createElement('ul');
+        list.className = 'ai-summary-list';
+        bulletCandidates.forEach((line) => {
+          const li = document.createElement('li');
+          li.textContent = line.replace(/^[-*•]\s+/, '');
+          list.appendChild(li);
+        });
+        panel.appendChild(list);
+      } else {
+        const paragraph = document.createElement('p');
+        paragraph.className = 'ai-summary';
+        paragraph.textContent = block.replace(/^[-*•]\s+/, '').trim();
+        panel.appendChild(paragraph);
+      }
+    });
+  }
+
+  const timestampEl = document.getElementById('intelTimestamp');
+  if (timestampEl) {
+    const date = generatedAt ? new Date(generatedAt) : null;
+    if (date && !Number.isNaN(date.getTime())) {
+      const prefix = symbol ? `${symbol} · ` : '';
+      timestampEl.textContent = `${prefix}Updated ${date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })}`;
+    } else if (symbol) {
+      timestampEl.textContent = symbol;
+    } else {
+      timestampEl.textContent = '';
+    }
+  }
+};
+
+const describePriceOverview = (points = [], { loading } = {}) => {
+  if (loading) return 'Loading price data…';
+  if (!Array.isArray(points) || points.length === 0) return 'Price data unavailable for the selected period.';
+
+  const first = points[0];
+  const last = points[points.length - 1];
+  const startPrice = Number(first?.price);
+  const endPrice = Number(last?.price);
+  if (!Number.isFinite(startPrice) || !Number.isFinite(endPrice)) return 'Price data unavailable for the selected period.';
+
+  const change = endPrice - startPrice;
+  const changePct = startPrice !== 0 ? (change / startPrice) * 100 : null;
+  const startLabel = fmtDate(first?.date || first?.timestamp || first?.time);
+  const endLabel = fmtDate(last?.date || last?.timestamp || last?.time);
+  const changeLabel = Number.isFinite(changePct) ? fmtPercent(changePct) : '—';
+  return `${fmtCurrency(endPrice)} · ${changeLabel} (${fmtCurrency(change)}) since ${startLabel} → ${endLabel}`;
+};
+
+const extractTrendPoints = (trend = []) => {
+  if (!Array.isArray(trend)) return [];
+  return trend
+    .map((entry) => {
+      const date = entry?.date || entry?.timestamp || entry?.time || null;
+      const close = Number(entry?.close ?? entry?.adjClose ?? entry?.price ?? entry?.last);
+      if (!date || !Number.isFinite(close)) return null;
+      return { date: date, price: close };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const da = new Date(a.date).getTime();
+      const db = new Date(b.date).getTime();
+      return da - db;
+    });
+};
+
+const renderPriceChart = (trend = [], { symbol, loading } = {}) => {
+  const overviewEl = document.getElementById('priceOverview');
+  const canvas = document.getElementById('priceChart');
+
+  if (!canvas || !overviewEl) return;
+
+  const points = extractTrendPoints(trend);
+
+  if (!points.length) {
+    overviewEl.textContent = describePriceOverview(points, { loading });
+    if (priceChart) {
+      priceChart.destroy();
+      priceChart = null;
+    }
+    return;
+  }
+
+  const labels = points.map((point) => fmtDate(point.date));
+  const data = points.map((point) => point.price);
+
+  overviewEl.textContent = describePriceOverview(points);
+
+  if (!priceChart) {
+    priceChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: symbol ? `${symbol} price` : 'Price',
+            data,
+            fill: false,
+            borderColor: 'rgba(74, 144, 226, 0.85)',
+            tension: 0.25,
+            borderWidth: 2,
+            pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { display: true, title: { display: false } },
+          y: { display: true, ticks: { callback: (value) => fmtCurrency(value) } },
+        },
+        plugins: { legend: { display: false } },
+      },
+    });
+  } else {
+    priceChart.data.labels = labels;
+    priceChart.data.datasets[0].data = data;
+    priceChart.data.datasets[0].label = symbol ? `${symbol} price` : 'Price';
+    priceChart.update();
+  }
+};
+
+const renderTimeline = (entries = [], { loading = false } = {}) => {
+  const container = document.getElementById('timeline');
+  if (!container) return;
+
+  if (!Array.isArray(entries) || !entries.length) {
+    renderPlaceholderList(
+      container,
+      loading ? 'Loading recent corporate events…' : 'Timeline will populate after the next successful analysis.',
+    );
+    return;
+  }
+
+  clearElement(container);
+  const template = document.getElementById('timelineItemTemplate');
+  entries.forEach((entry) => {
+    const clone = template?.content ? template.content.firstElementChild.cloneNode(true) : document.createElement('li');
+    clone.className = 'timeline-item';
+    clone.dataset.type = entry.type || 'event';
+    const timeEl = clone.querySelector('.timeline-time');
+    const titleEl = clone.querySelector('.timeline-title');
+    const bodyEl = clone.querySelector('.timeline-body');
+    if (timeEl) timeEl.textContent = fmtDate(entry.publishedAt || entry.date);
+    if (titleEl) titleEl.textContent = entry.headline || entry.title || entry.summary || 'Event';
+    if (bodyEl) bodyEl.textContent = entry.summary || entry.description || '';
+    container.appendChild(clone);
+  });
+};
+
+const renderDocuments = (documents = [], { loading = false } = {}) => {
+  const container = document.getElementById('documents');
+  if (!container) return;
+
+  if (!Array.isArray(documents) || !documents.length) {
+    renderPlaceholderList(
+      container,
+      loading ? 'Fetching regulatory documents…' : 'No recent regulatory documents were returned.',
+    );
+    return;
+  }
+
+  clearElement(container);
+  const template = document.getElementById('documentItemTemplate');
+  documents.slice(0, 12).forEach((doc) => {
+    const clone = template?.content ? template.content.firstElementChild.cloneNode(true) : document.createElement('li');
+    clone.className = 'document-item';
+    const titleEl = clone.querySelector('.document-title');
+    if (titleEl) titleEl.textContent = doc.headline || doc.title || 'Document';
+    const linkEl = clone.querySelector('.document-link');
+    if (linkEl) {
+      linkEl.href = doc.url || '#';
+      linkEl.textContent = 'Open';
+    }
+    const metaEl = clone.querySelector('.document-meta');
+    if (metaEl) {
+      const published = fmtDate(doc.publishedAt);
+      const type = doc.documentType || doc.type || '';
+      metaEl.textContent = [type, published].filter(Boolean).join(' · ');
+    }
+    container.appendChild(clone);
+  });
+};
+
+const sentimentClass = (sentiment) => {
+  const value = Number(sentiment);
+  if (!Number.isFinite(value)) return 'neutral';
+  if (value > 0.2) return 'positive';
+  if (value < -0.2) return 'negative';
+  return 'neutral';
+};
+
+const renderNewsList = (newsItems = [], { loading = false } = {}) => {
+  const container = document.getElementById('newsList');
+  if (!container) return;
+
+  if (!Array.isArray(newsItems) || !newsItems.length) {
+    renderPlaceholderList(
+      container,
+      loading ? 'Scanning market news…' : 'No recent news headlines were available for this symbol.',
+    );
+    return;
+  }
+
+  clearElement(container);
+  const template = document.getElementById('newsItemTemplate');
+  newsItems.slice(0, 12).forEach((item) => {
+    const clone = template?.content ? template.content.firstElementChild.cloneNode(true) : document.createElement('li');
+    clone.className = `news-item ${sentimentClass(item?.sentiment)}`.trim();
+
+    const sourceEl = clone.querySelector('.news-source');
+    const dateEl = clone.querySelector('.news-date');
+    const headlineEl = clone.querySelector('.news-headline');
+    const summaryEl = clone.querySelector('.news-summary');
+
+    if (sourceEl) sourceEl.textContent = item?.source || 'News';
+    if (dateEl) dateEl.textContent = fmtDate(item?.publishedAt);
+    if (headlineEl) {
+      headlineEl.textContent = item?.headline || item?.title || 'Headline';
+      headlineEl.href = item?.url || '#';
+    }
+    if (summaryEl) {
+      summaryEl.textContent = item?.summary || item?.description || '';
+    }
+
+    container.appendChild(clone);
+  });
 };
 
 const toggleAnalysisLoading = ({ isLoading, forceRefresh }) => {
@@ -411,20 +716,37 @@ async function runAnalysis(options = {}) {
   lastAnalysis = null;
   toggleAnalysisLoading({ isLoading: true, forceRefresh });
   setStatus(forceRefresh ? 'Refreshing valuation…' : 'Running analysis…');
+  preparePanelsForLoading({ symbol });
 
   try {
     const { data, warning } = await fetchIntel({ symbol, limit, timeframe, forceRefresh });
+    const effectiveSymbol = data?.symbol || symbol;
     renderHeatmap(data?.heatmap || []); // 👈 heatmap support
     renderValuationPanel(data?.valuation || {});
-    lastAnalysis = { symbol, limit, timeframe, data, warning };
+    renderNarrative({
+      summary: data?.aiSummary,
+      symbol: effectiveSymbol,
+      generatedAt: data?.generatedAt,
+    });
+    renderTimeline(data?.timeline || []);
+    renderDocuments(data?.documents || []);
+    renderNewsList(data?.news || []);
+    renderPriceChart(data?.trend || [], { symbol: effectiveSymbol });
+    lastAnalysis = { symbol: effectiveSymbol, limit, timeframe, data, warning };
     const message = warning || (forceRefresh ? 'Valuation refreshed.' : 'Analysis completed.');
     setStatus(message, warning ? 'info' : 'success');
   } catch (err) {
     console.error(err);
     setStatus(err.message, 'error');
+    renderNarrative({ summary: '', symbol, loading: false });
+    renderTimeline([]);
+    renderDocuments([]);
+    renderNewsList([]);
+    renderPriceChart([], { loading: false });
   } finally {
     analysisInFlight = false;
     toggleAnalysisLoading({ isLoading: false, forceRefresh });
+    setNarrativeLoading(false);
   }
 }
 
@@ -450,6 +772,7 @@ function init() {
     if (!lastAnalysis) return;
     downloadCsv(lastAnalysis.symbol, lastAnalysis.data);
   });
+  initBatchResultsModule();
   runAnalysis();
 }
 
