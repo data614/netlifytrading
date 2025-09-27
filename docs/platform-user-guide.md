@@ -25,9 +25,17 @@ Install dependencies:
 npm install
 ```
 
+### Staged environment
+Most day-to-day validation now occurs on the hosted build at
+<https://trade.goodhopecorp.com>. Use this domain for manual QA or stakeholder
+reviews so that every surface exercises the same configuration that production
+will run. Record any outages or discrepancies before switching to a local
+environment.
+
 ### Local development server
-Run the Netlify development server. It provides both the static front-end and
-local emulations of the serverless functions under the `/api` namespace.
+When a hosted build is not available, run the Netlify development server. It
+provides both the static front-end and local emulations of the serverless
+functions under the `/api` namespace.
 
 ```bash
 npm start
