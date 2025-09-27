@@ -11,6 +11,7 @@ import {
 } from './api-client.js';
 import { createNewsFeed, createFilingsFeed, createMarketRadarShell, createDocumentViewer } from './feeds.js';
 import { createResearchLabPanel, createScreenerPreview } from './research-modules.js';
+import { createDeskMonitor } from './monitoring.js';
 
 const state = {
   symbol: 'AAPL',
@@ -21,6 +22,7 @@ const state = {
   lastQuote: null,
   filings: [],
   selectedFilingId: null,
+  autoRefreshPaused: false,
 };
 
 const statusBanner = createStatusBanner();
@@ -33,9 +35,19 @@ let documentViewer;
 let marketRadarShell;
 let researchLabPanel;
 let screenerPreviewCard;
+let deskMonitor;
+let dataRefreshTimer;
+let intelRefreshTimer;
+let onlineHandler;
+let offlineHandler;
+let errorHandler;
+let rejectionHandler;
 
 const getFilingId = (item) =>
   item?.id || item?.url || (item?.documentType ? `${item.documentType}-${item?.publishedAt || ''}` : item?.publishedAt || '');
+
+const DATA_REFRESH_INTERVAL = 60 * 1000;
+const INTEL_REFRESH_INTERVAL = 3 * 60 * 1000;
 
 function registerZoomPlugin() {
   const zoomPlugin = window?.ChartZoom || window?.chartjs_plugin_zoom;
@@ -155,14 +167,52 @@ function updateChart(rows, rangeKey) {
   chart.update('none');
 }
 
-function setLoading(isLoading) {
+function setLoading(isLoading, { silent = false } = {}) {
   state.loading = isLoading;
+  if (silent) return;
   if (isLoading) {
     loadingOverlay?.show();
     statusBanner.setMessage('Loading market data…', 'default');
   } else {
     loadingOverlay?.hide();
   }
+}
+
+function clearRefreshTimers() {
+  if (dataRefreshTimer) {
+    clearInterval(dataRefreshTimer);
+    dataRefreshTimer = null;
+  }
+  if (intelRefreshTimer) {
+    clearInterval(intelRefreshTimer);
+    intelRefreshTimer = null;
+  }
+}
+
+function scheduleRefreshTimers() {
+  clearRefreshTimers();
+  dataRefreshTimer = window.setInterval(() => {
+    refreshData({ silent: true });
+  }, DATA_REFRESH_INTERVAL);
+  intelRefreshTimer = window.setInterval(() => {
+    refreshIntel({ silent: true });
+  }, INTEL_REFRESH_INTERVAL);
+}
+
+function pauseAutoRefresh() {
+  if (state.autoRefreshPaused) return;
+  state.autoRefreshPaused = true;
+  clearRefreshTimers();
+  deskMonitor?.log('warning', 'Auto-refresh paused', 'Tab inactive');
+}
+
+function resumeAutoRefresh() {
+  if (!state.autoRefreshPaused) return;
+  state.autoRefreshPaused = false;
+  deskMonitor?.log('info', 'Auto-refresh resumed');
+  refreshData({ silent: true });
+  refreshIntel({ silent: true });
+  scheduleRefreshTimers();
 }
 
 function updateStatus({ warning, meta }) {
@@ -201,23 +251,40 @@ function updateQuoteDisplay(quote) {
   }
 }
 
-async function refreshNews() {
+async function refreshNews({ silent = false } = {}) {
   if (!newsFeed) return;
-  newsFeed.setLoading(true);
+  const tracker = deskMonitor?.beginChannel('news-feed', 'News feed', { silent });
+  const showLoader = !silent;
+  if (showLoader) {
+    newsFeed.setLoading(true);
+  }
   try {
     const data = await fetchCompanyNews(state.symbol, { limit: 20 });
     newsFeed.update(data);
+    const count = Array.isArray(data?.rows) ? data.rows.length : 0;
+    tracker?.success({
+      message: `${count} headline${count === 1 ? '' : 's'} refreshed`,
+      detail: `${count} total`,
+      logMessage: `${state.symbol} news updated`,
+    });
   } catch (error) {
     console.error(error);
     newsFeed.update({ rows: [], meta: { source: 'mock', reason: 'news_error' }, warning: error?.message || 'Unable to load news.' });
+    tracker?.error(error, { logMessage: `${state.symbol} news failed` });
   } finally {
-    newsFeed.setLoading(false);
+    if (showLoader) {
+      newsFeed.setLoading(false);
+    }
   }
 }
 
-async function refreshFilings() {
+async function refreshFilings({ silent = false } = {}) {
   if (!filingsFeed) return;
-  filingsFeed.setLoading(true);
+  const tracker = deskMonitor?.beginChannel('sec-filings', 'SEC filings', { silent });
+  const showLoader = !silent;
+  if (showLoader) {
+    filingsFeed.setLoading(true);
+  }
   try {
     const data = await fetchSecFilings(state.symbol, { limit: 12 });
     state.filings = Array.isArray(data.rows) ? data.rows : [];
@@ -236,6 +303,11 @@ async function refreshFilings() {
       documentViewer?.clear?.();
       filingsFeed.setActive?.('');
     }
+    tracker?.success({
+      message: `${state.filings.length} filing${state.filings.length === 1 ? '' : 's'} synced`,
+      detail: `${state.symbol} filings`,
+      logMessage: `${state.symbol} filings updated`,
+    });
   } catch (error) {
     console.error(error);
     filingsFeed.update({
@@ -246,13 +318,19 @@ async function refreshFilings() {
     state.filings = [];
     state.selectedFilingId = null;
     documentViewer?.clear?.();
+    tracker?.error(error, { logMessage: `${state.symbol} filings failed` });
   } finally {
-    filingsFeed.setLoading(false);
+    if (showLoader) {
+      filingsFeed.setLoading(false);
+    }
   }
 }
 
-async function refreshWorkspaceExtensions() {
+async function refreshWorkspaceExtensions({ silent = false } = {}) {
   const tasks = [];
+  const tracker = deskMonitor?.beginChannel('research-suite', 'Research suite', { silent });
+  let failures = 0;
+  let modulesLoaded = 0;
 
   if (researchLabPanel) {
     researchLabPanel.setLoading(true);
@@ -261,6 +339,7 @@ async function refreshWorkspaceExtensions() {
         .then((data) => {
           researchLabPanel.setSource?.(data.meta || {});
           researchLabPanel.update({ ...data });
+          modulesLoaded += 1;
         })
         .catch((error) => {
           console.error(error);
@@ -272,6 +351,7 @@ async function refreshWorkspaceExtensions() {
             diligence: [],
             catalysts: [],
           });
+          failures += 1;
         })
         .finally(() => {
           researchLabPanel.setLoading(false);
@@ -286,6 +366,7 @@ async function refreshWorkspaceExtensions() {
         .then((data) => {
           screenerPreviewCard.setSource?.(data.meta || {});
           screenerPreviewCard.update({ ...data });
+          modulesLoaded += 1;
         })
         .catch((error) => {
           console.error(error);
@@ -296,6 +377,7 @@ async function refreshWorkspaceExtensions() {
             metrics: [],
             topIdeas: [],
           });
+          failures += 1;
         })
         .finally(() => {
           screenerPreviewCard.setLoading(false);
@@ -305,16 +387,38 @@ async function refreshWorkspaceExtensions() {
 
   if (tasks.length) {
     await Promise.all(tasks);
+    if (tracker) {
+      if (failures) {
+        tracker.warning({
+          message: `${modulesLoaded} module${modulesLoaded === 1 ? '' : 's'} loaded · ${failures} issue${failures === 1 ? '' : 's'}`,
+          detail: `${modulesLoaded} ok / ${failures} issues`,
+          logMessage: `${state.symbol} research partially loaded`,
+        });
+      } else {
+        tracker.success({
+          message: `${modulesLoaded} module${modulesLoaded === 1 ? '' : 's'} refreshed`,
+          detail: `${modulesLoaded} modules`,
+          logMessage: `${state.symbol} research suite updated`,
+        });
+      }
+    }
+  } else {
+    tracker?.success({ message: 'No modules active', detail: 'Idle' });
   }
 }
 
-async function refreshIntel() {
-  await Promise.all([refreshNews(), refreshFilings(), refreshWorkspaceExtensions()]);
+async function refreshIntel({ silent = false } = {}) {
+  await Promise.allSettled([
+    refreshNews({ silent }),
+    refreshFilings({ silent }),
+    refreshWorkspaceExtensions({ silent }),
+  ]);
 }
 
-async function refreshData() {
+async function refreshData({ silent = false } = {}) {
   if (!state.symbol) return;
-  setLoading(true);
+  setLoading(true, { silent });
+  const tracker = deskMonitor?.beginChannel('market-data', 'Market data', { silent });
   try {
     const [{ rows, warning, meta }, latest] = await Promise.all([
       fetchPriceHistory(state.symbol, state.range),
@@ -325,16 +429,24 @@ async function refreshData() {
     state.lastQuote = latest?.row || rows?.[rows.length - 1] || null;
     updateQuoteDisplay(state.lastQuote);
     resetZoom();
+    const count = Array.isArray(rows) ? rows.length : 0;
+    tracker?.success({
+      message: `${count} datapoint${count === 1 ? '' : 's'} loaded`,
+      detail: `${state.symbol} · ${describeRange(state.range)}`,
+      logMessage: `${state.symbol} market data refreshed`,
+    });
   } catch (error) {
     console.error(error);
     statusBanner.setMessage(error?.message || 'Unable to load data', 'error');
+    tracker?.error(error, { logMessage: `${state.symbol} market data failed` });
   } finally {
-    setLoading(false);
+    setLoading(false, { silent });
   }
 }
 
 function handleSymbolChange(symbol) {
   state.symbol = symbol;
+  deskMonitor?.setSymbol(symbol);
   document.querySelectorAll('[data-active-symbol]').forEach((el) => {
     el.textContent = symbol;
   });
@@ -350,10 +462,14 @@ function handleSymbolChange(symbol) {
       }
     });
   }
+  clearRefreshTimers();
   refreshData();
   state.selectedFilingId = null;
   documentViewer?.clear?.();
   refreshIntel();
+  if (!state.autoRefreshPaused) {
+    scheduleRefreshTimers();
+  }
 }
 
 function handleRangeChange(range) {
@@ -390,6 +506,16 @@ function init() {
     console.warn('Professional desk shell missing required elements');
     return;
   }
+
+  deskMonitor = createDeskMonitor({
+    channels: [
+      { key: 'market-data', label: 'Market data' },
+      { key: 'news-feed', label: 'News feed' },
+      { key: 'sec-filings', label: 'SEC filings' },
+      { key: 'research-suite', label: 'Research suite' },
+      { key: 'connectivity', label: 'Connectivity' },
+    ],
+  });
 
   symbolControl = createSymbolInput({
     initial: state.symbol,
@@ -457,8 +583,11 @@ function init() {
       researchLabPanel.element,
       screenerPreviewCard.element,
       marketRadarShell.element,
+      deskMonitor.element,
       documentViewer.element,
     );
+  } else if (deskMonitor?.element) {
+    document.querySelector('.pro-main')?.appendChild(deskMonitor.element);
   }
 
   hydrateWatchlist();
@@ -466,8 +595,48 @@ function init() {
     el.textContent = state.symbol;
   });
 
+  const connectivityState = navigator.onLine ? 'online' : 'offline';
+  deskMonitor?.setNetworkState(connectivityState, connectivityState === 'online' ? 'Network ready' : 'Waiting for network');
+
+  onlineHandler = () => deskMonitor?.setNetworkState('online', 'Network restored');
+  offlineHandler = () => deskMonitor?.setNetworkState('offline', 'Connection lost');
+  window.addEventListener('online', onlineHandler);
+  window.addEventListener('offline', offlineHandler);
+
+  errorHandler = (event) => {
+    if (!event) return;
+    const location = event.filename ? `${event.filename}:${event.lineno || 0}` : '';
+    const detail = [event.message, location].filter(Boolean).join(' · ');
+    deskMonitor?.log('error', 'Runtime error captured', detail);
+  };
+  window.addEventListener('error', errorHandler);
+
+  rejectionHandler = (event) => {
+    if (!event) return;
+    const reason = event.reason;
+    const message = typeof reason === 'string' ? reason : reason?.message || 'Unhandled rejection';
+    deskMonitor?.log('error', 'Unhandled promise rejection', message);
+  };
+  window.addEventListener('unhandledrejection', rejectionHandler);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      pauseAutoRefresh();
+    } else {
+      resumeAutoRefresh();
+    }
+  });
+
+  window.addEventListener('beforeunload', clearRefreshTimers);
+
   refreshData();
   refreshIntel();
+  if (!document.hidden) {
+    scheduleRefreshTimers();
+  } else {
+    state.autoRefreshPaused = true;
+    deskMonitor?.log('warning', 'Auto-refresh paused', 'Tab inactive');
+  }
 }
 
 if (document.readyState === 'loading') {

@@ -1319,6 +1319,175 @@ a:focus {
   color: #ffd7a0;
 }
 
+.pro-monitor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.pro-monitor-status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pro-monitor-channel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: border 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pro-monitor-channel[data-state='loading'] {
+  border-color: var(--accent-soft);
+  background: rgba(76, 141, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(76, 141, 255, 0.12) inset;
+}
+
+.pro-monitor-channel[data-state='ok'] {
+  border-color: rgba(61, 214, 140, 0.26);
+}
+
+.pro-monitor-channel[data-state='warning'] {
+  border-color: rgba(255, 179, 71, 0.28);
+  background: rgba(255, 179, 71, 0.08);
+}
+
+.pro-monitor-channel[data-state='error'] {
+  border-color: rgba(255, 107, 107, 0.32);
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.pro-monitor-channel .channel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pro-monitor-channel .channel-label {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.pro-monitor-channel .channel-status {
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.pro-monitor-channel[data-state='ok'] .channel-status {
+  color: var(--positive);
+}
+
+.pro-monitor-channel[data-state='warning'] .channel-status {
+  color: #ffb347;
+}
+
+.pro-monitor-channel[data-state='error'] .channel-status {
+  color: var(--negative);
+}
+
+.pro-monitor-channel .channel-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  color: var(--text-secondary);
+}
+
+.pro-monitor-channel .channel-message {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.pro-monitor-subheading {
+  margin: 0;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-secondary);
+}
+
+.pro-monitor-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pro-monitor-log li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pro-monitor-log li[data-level='info'] {
+  border-left: 3px solid rgba(76, 141, 255, 0.45);
+}
+
+.pro-monitor-log li[data-level='warning'] {
+  border-left: 3px solid rgba(255, 179, 71, 0.6);
+}
+
+.pro-monitor-log li[data-level='error'] {
+  border-left: 3px solid rgba(255, 107, 107, 0.8);
+}
+
+.pro-monitor-log time {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+.pro-monitor-log .log-message {
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.pro-monitor-log .log-detail {
+  font-size: 0.78rem;
+}
+
+.pro-monitor-log-empty {
+  padding: 0.8rem 0.9rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+}
+
+.pro-monitor-body::-webkit-scrollbar,
+.pro-monitor-log::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pro-monitor-log::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+.pro-monitor-log::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 @media (max-width: 900px) {
   .valuation-control-actions {
     width: 100%;
