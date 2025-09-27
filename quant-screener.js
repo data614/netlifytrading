@@ -31,6 +31,12 @@ const fmtPercent = (value) => {
   return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
 };
 
+const fmtCount = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return num.toLocaleString();
+};
+
 const HEATMAP_LIMIT = 18;
 
 const clamp = (value, min, max) => {
@@ -88,6 +94,7 @@ let currentSort = { ...DEFAULT_SORT };
 let isScreening = false;
 let visibleRows = [];
 const intelCache = createAsyncCache({ ttlMs: 5 * 60 * 1000, maxSize: 256 });
+const statusLogEntries = [];
 
 const preferenceStore = createScreenPreferenceStore({
   defaults: {
@@ -370,6 +377,276 @@ function renderTable(rows) {
   }
 }
 
+function renderExtrema(metrics) {
+  const container = $('#insightExtrema [data-field="extrema"]');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (!metrics || !metrics.count) {
+    container.textContent = 'No data';
+    return;
+  }
+
+  const items = [];
+  if (metrics.bestUpside) {
+    items.push({
+      label: `${metrics.bestUpside.symbol} upside`,
+      value: fmtPercent(metrics.bestUpside.value),
+    });
+  }
+  if (metrics.worstUpside) {
+    items.push({
+      label: `${metrics.worstUpside.symbol} downside`,
+      value: fmtPercent(metrics.worstUpside.value),
+    });
+  }
+  if (metrics.bestMomentum) {
+    items.push({
+      label: `${metrics.bestMomentum.symbol} momentum`,
+      value: fmtPercent(metrics.bestMomentum.value),
+    });
+  }
+
+  if (!items.length) {
+    container.textContent = 'No data';
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'insight-extrema-row';
+    const label = document.createElement('span');
+    label.textContent = item.label;
+    const value = document.createElement('span');
+    value.textContent = item.value;
+    row.append(label, value);
+    container.appendChild(row);
+  });
+}
+
+function renderSectorLeaders(metrics) {
+  const wrapper = $('#sectorLeaders');
+  const list = $('#sectorLeaderList');
+  if (!wrapper || !list) return;
+
+  list.innerHTML = '';
+
+  if (!metrics || !metrics.count || !metrics.sectorLeaders?.length) {
+    wrapper.classList.add('is-empty');
+    const placeholder = document.createElement('li');
+    placeholder.className = 'sector-leader-item sector-leader-placeholder';
+    placeholder.textContent = 'Run the screener to discover sector trends.';
+    list.appendChild(placeholder);
+    return;
+  }
+
+  wrapper.classList.remove('is-empty');
+  metrics.sectorLeaders.forEach((leader) => {
+    const item = document.createElement('li');
+    item.className = 'sector-leader-item';
+    const name = document.createElement('strong');
+    name.textContent = leader.name;
+    const count = document.createElement('span');
+    count.textContent = `${fmtCount(leader.count)} tickers`;
+    const weight = document.createElement('span');
+    weight.className = 'sector-leader-weight';
+    weight.textContent = leader.weight
+      ? `${(leader.weight * 100).toFixed(0)}%`
+      : '—';
+    const upside = document.createElement('span');
+    upside.textContent = leader.averageUpside !== null
+      ? `Avg ${fmtPercent(leader.averageUpside)}`
+      : 'Avg —';
+    item.append(name, count, upside, weight);
+    list.appendChild(item);
+  });
+}
+
+function renderInsights(metrics) {
+  const meta = $('#insightsMeta');
+  const grid = $('#insightGrid');
+  if (!meta || !grid) return;
+
+  if (!metrics || !metrics.count) {
+    meta.textContent = 'Awaiting results';
+  } else {
+    meta.textContent = `${fmtCount(metrics.count)} tickers analysed`;
+  }
+
+  const avgUpsideEl = grid.querySelector('[data-field="avgUpside"]');
+  const medianUpsideEl = grid.querySelector('[data-field="medianUpside"]');
+  const avgMomentumEl = grid.querySelector('[data-field="momentumAverage"]');
+  const medianMomentumEl = grid.querySelector('[data-field="momentumMedian"]');
+  const averageCapEl = grid.querySelector('[data-field="averageMarketCap"]');
+  const totalCapEl = grid.querySelector('[data-field="totalMarketCap"]');
+
+  const avgUpside = Number.isFinite(metrics?.avgUpside) ? metrics.avgUpside : null;
+  const medianUpside = Number.isFinite(metrics?.medianUpside) ? metrics.medianUpside : null;
+  const avgMomentum = Number.isFinite(metrics?.momentumAverage) ? metrics.momentumAverage : null;
+  const medianMomentum = Number.isFinite(metrics?.momentumMedian) ? metrics.momentumMedian : null;
+  const averageCap = Number.isFinite(metrics?.averageMarketCap) ? metrics.averageMarketCap : null;
+  const totalCap = Number.isFinite(metrics?.totalMarketCap) ? metrics.totalMarketCap : null;
+
+  if (avgUpsideEl) avgUpsideEl.textContent = fmtPercent(avgUpside);
+  if (medianUpsideEl) medianUpsideEl.textContent = `Median ${fmtPercent(medianUpside)}`;
+  if (avgMomentumEl) avgMomentumEl.textContent = fmtPercent(avgMomentum);
+  if (medianMomentumEl) medianMomentumEl.textContent = `Median ${fmtPercent(medianMomentum)}`;
+  if (averageCapEl) averageCapEl.textContent = fmtCompactCurrency(averageCap);
+  if (totalCapEl) totalCapEl.textContent = `Total ${fmtCompactCurrency(totalCap)}`;
+
+  renderExtrema(metrics);
+  renderSectorLeaders(metrics);
+}
+
+function formatDuration(durationMs) {
+  const num = Number(durationMs);
+  if (!Number.isFinite(num) || num < 0) return '—';
+  if (num < 1_000) return `${Math.round(num)} ms`;
+  if (num < 60_000) {
+    const seconds = num / 1_000;
+    return `${seconds.toFixed(seconds < 10 ? 1 : 0)} s`;
+  }
+  const minutes = Math.floor(num / 60_000);
+  const seconds = Math.round((num % 60_000) / 1_000);
+  const paddedSeconds = String(seconds).padStart(2, '0');
+  return `${minutes}m ${paddedSeconds}s`;
+}
+
+function formatTimestamp(timestamp) {
+  const date = new Date(Number(timestamp));
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+  return date.toLocaleString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function renderRunHistory(entries) {
+  const container = $('#runHistory');
+  if (!container) return;
+
+  container.innerHTML = '';
+  container.classList.remove('is-empty');
+
+  if (!entries.length) {
+    container.classList.add('is-empty');
+    const placeholder = document.createElement('p');
+    placeholder.className = 'status-log-placeholder';
+    placeholder.textContent = 'Run the screener to build history.';
+    container.appendChild(placeholder);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  entries.forEach((entry) => {
+    const card = document.createElement('article');
+    card.className = 'history-entry';
+    card.dataset.timestamp = String(entry.timestamp);
+
+    const header = document.createElement('div');
+    header.className = 'history-entry-header';
+    const title = document.createElement('div');
+    title.className = 'history-entry-title';
+    title.textContent = formatTimestamp(entry.timestamp);
+    header.appendChild(title);
+
+    const actions = document.createElement('div');
+    actions.className = 'history-entry-actions';
+    const applyButton = document.createElement('button');
+    applyButton.type = 'button';
+    applyButton.dataset.action = 'apply';
+    applyButton.dataset.timestamp = String(entry.timestamp);
+    applyButton.innerHTML = '<i class="fa-solid fa-arrow-rotate-right"></i> Apply filters';
+    actions.appendChild(applyButton);
+    header.appendChild(actions);
+    card.appendChild(header);
+
+    const meta = document.createElement('div');
+    meta.className = 'history-entry-meta';
+    const stats = [
+      `${fmtCount(entry.universeCount)} in universe`,
+      `${fmtCount(entry.matches)} matches`,
+      `Duration ${formatDuration(entry.durationMs)}`,
+    ];
+    if (entry.reachedCap) {
+      stats.push('Reached batch cap');
+    }
+    if (entry.errorCount) {
+      stats.push(`${fmtCount(entry.errorCount)} errors`);
+    }
+    stats.forEach((label) => {
+      const span = document.createElement('span');
+      span.textContent = label;
+      meta.appendChild(span);
+    });
+    card.appendChild(meta);
+
+    if (entry.filters?.sectors?.length) {
+      const sectorNote = document.createElement('div');
+      sectorNote.className = 'history-entry-meta';
+      const span = document.createElement('span');
+      span.textContent = `Sectors: ${entry.filters.sectors.join(', ')}`;
+      sectorNote.appendChild(span);
+      card.appendChild(sectorNote);
+    }
+
+    fragment.appendChild(card);
+  });
+
+  container.appendChild(fragment);
+}
+
+function renderStatusLog() {
+  const container = $('#statusLog');
+  if (!container) return;
+
+  container.innerHTML = '';
+  container.classList.remove('is-empty');
+
+  if (!statusLogEntries.length) {
+    container.classList.add('is-empty');
+    const placeholder = document.createElement('p');
+    placeholder.className = 'status-log-placeholder';
+    placeholder.textContent = 'Run the screener to start logging activity.';
+    container.appendChild(placeholder);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  statusLogEntries.forEach((entry) => {
+    const row = document.createElement('div');
+    row.className = `status-log-entry ${entry.tone}`;
+    const time = document.createElement('time');
+    time.dateTime = new Date(entry.timestamp).toISOString();
+    time.textContent = new Date(entry.timestamp).toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const message = document.createElement('span');
+    message.textContent = entry.message;
+    row.append(time, message);
+    fragment.appendChild(row);
+  });
+
+  container.appendChild(fragment);
+}
+
+function recordStatus(message, tone) {
+  statusLogEntries.unshift({
+    message,
+    tone,
+    timestamp: Date.now(),
+  });
+  while (statusLogEntries.length > 40) {
+    statusLogEntries.pop();
+  }
+  renderStatusLog();
+}
+
 function sortResults(rows, key, direction) {
   const sorted = [...rows].sort((a, b) => {
     const va = a[key];
@@ -469,6 +746,7 @@ function updateSummary(rows) {
 
   latestMetrics = computeAggregateMetrics(rows);
   assignSummaryChipDataset(chip, latestMetrics);
+  renderInsights(latestMetrics);
 
   if (!rows.length) {
     chip.textContent = '0 matches';
@@ -486,6 +764,7 @@ function setStatus(message, tone = 'info') {
   if (!el) return;
   el.textContent = message;
   el.className = `status-message ${tone}`;
+  recordStatus(message, tone);
 }
 
 async function runScreen() {
@@ -585,6 +864,7 @@ async function runScreen() {
     universeSample: universe,
     metrics: latestMetrics,
   });
+  renderRunHistory(runHistoryStore.list());
   publishRuntimeBridge();
 
   if (!currentResults.length) {
@@ -646,6 +926,57 @@ function registerFilterControls() {
   }
 }
 
+function toBillions(value) {
+  if (!Number.isFinite(value)) return '';
+  const billions = value / 1_000_000_000;
+  if (Number.isInteger(billions)) return String(billions);
+  if (Math.abs(billions) < 1) return billions.toFixed(2);
+  return billions.toFixed(1);
+}
+
+function applyHistoryEntry(entry) {
+  if (!entry) return;
+
+  const filters = entry.filters || {};
+  const assign = (selector, value) => {
+    const el = $(selector);
+    if (!el) return;
+    el.value = value ?? '';
+  };
+
+  assign('#universeInput', entry.universeSample?.join(', ') || '');
+  assign('#upsideFilter', filters.minUpside ?? '');
+  assign('#upsideMaxFilter', filters.maxUpside ?? '');
+  assign('#marketCapMin', filters.marketCapMin !== null ? toBillions(filters.marketCapMin) : '');
+  assign('#marketCapMax', filters.marketCapMax !== null ? toBillions(filters.marketCapMax) : '');
+  assign('#batchSize', filters.batchCap ?? '');
+  assign('#sectorFilter', Array.isArray(filters.sectors) ? filters.sectors.join(', ') : '');
+
+  currentSort = {
+    key: entry.sort?.key || currentSort.key,
+    direction: entry.sort?.direction === 'asc' ? 'asc' : 'desc',
+  };
+
+  persistPreferences({
+    universe: $('#universeInput')?.value || '',
+    filters: {
+      minUpside: $('#upsideFilter')?.value || '',
+      maxUpside: $('#upsideMaxFilter')?.value || '',
+      marketCapMin: $('#marketCapMin')?.value || '',
+      marketCapMax: $('#marketCapMax')?.value || '',
+      sectors: $('#sectorFilter')?.value || '',
+      batchCap: $('#batchSize')?.value || '',
+    },
+    sort: currentSort,
+  });
+
+  if (!isScreening && processedRows.length) {
+    applyFilters();
+  }
+
+  setStatus(`Restored filters from ${formatTimestamp(entry.timestamp)}.`, 'info');
+}
+
 function downloadCsv() {
   const source = visibleRows.length ? visibleRows : currentResults;
   if (!source.length) {
@@ -692,6 +1023,31 @@ function init() {
   renderHeatmap([]);
   updateSummary([]);
   persistPreferences();
+  renderInsights(createEmptyAggregateMetrics());
+  renderRunHistory(runHistoryStore.list());
+  renderStatusLog();
+
+  const historyContainer = $('#runHistory');
+  if (historyContainer) {
+    historyContainer.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-action="apply"]');
+      if (!button) return;
+      const timestamp = Number(button.dataset.timestamp);
+      if (!Number.isFinite(timestamp)) return;
+      const entry = runHistoryStore.list().find((candidate) => candidate.timestamp === timestamp);
+      if (!entry) return;
+      applyHistoryEntry(entry);
+    });
+  }
+
+  const clearHistoryButton = $('#clearRunHistory');
+  if (clearHistoryButton) {
+    clearHistoryButton.addEventListener('click', () => {
+      runHistoryStore.clear();
+      renderRunHistory([]);
+      setStatus('Run history cleared.', 'warning');
+    });
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

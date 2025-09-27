@@ -69,6 +69,13 @@
         <h2>Market Radar</h2>
         <div id="heatmap" class="valuation-breakdown market-radar"></div>
       </div>
+
+      <div class="card" id="activityCard">
+        <h2>Activity monitor</h2>
+        <div id="statusLog" class="status-log is-empty">
+          <p class="status-log-placeholder">Run the screener to start logging activity.</p>
+        </div>
+      </div>
     </section>
 
     <section class="intel-panel">
@@ -94,6 +101,48 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+
+      <div class="card" id="insightsCard">
+        <div class="card-header">
+          <h2>Screen insights</h2>
+          <span id="insightsMeta" class="chip chip-muted">Awaiting results</span>
+        </div>
+        <div class="insight-grid" id="insightGrid">
+          <div class="insight-item">
+            <span class="insight-label">Average upside</span>
+            <span class="insight-value" data-field="avgUpside">—</span>
+            <span class="insight-subvalue" data-field="medianUpside">Median —</span>
+          </div>
+          <div class="insight-item">
+            <span class="insight-label">Momentum</span>
+            <span class="insight-value" data-field="momentumAverage">—</span>
+            <span class="insight-subvalue" data-field="momentumMedian">Median —</span>
+          </div>
+          <div class="insight-item">
+            <span class="insight-label">Market cap</span>
+            <span class="insight-value" data-field="averageMarketCap">—</span>
+            <span class="insight-subvalue" data-field="totalMarketCap">Total —</span>
+          </div>
+          <div class="insight-item" id="insightExtrema">
+            <span class="insight-label">Extremes</span>
+            <div class="insight-extrema" data-field="extrema">No data</div>
+          </div>
+        </div>
+        <div class="sector-leaders" id="sectorLeaders">
+          <h3>Sector leadership</h3>
+          <ul class="sector-leader-list" id="sectorLeaderList"></ul>
+        </div>
+      </div>
+
+      <div class="card" id="historyCard">
+        <div class="card-header">
+          <h2>Run history</h2>
+          <div class="history-actions">
+            <button class="btn ghost" id="clearRunHistory" type="button"><i class="fa-solid fa-broom"></i> Clear</button>
+          </div>
+        </div>
+        <div class="history-list" id="runHistory"></div>
       </div>
     </section>
   </main>
