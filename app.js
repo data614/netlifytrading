@@ -3,6 +3,7 @@ import { enrichError, getFriendlyErrorMessage } from './utils/frontend-errors.js
 import { loadPreferences, updatePreferences } from './utils/user-preferences.js';
 import { createLatestPromiseRunner, createOperationTokenSource } from './utils/task-guards.js';
 import { createPassiveRuntimeMonitor } from './utils/runtime-monitor.js';
+import createLoadingOverlayController from './utils/dom-loading-overlay.js';
 
 const createMemoryStorage = () => {
   const store = new Map();
@@ -183,14 +184,21 @@ const applyPreferenceUpdate = (patch) => {
 // So all requests go to `/api/tiingo` locally (netlify dev) and when deployed.
 
 /* DOM helpers */
+const getLoadingElement = () => (typeof document !== 'undefined' && typeof document.getElementById === 'function'
+  ? document.getElementById('loading')
+  : null);
 const $ = (id) => document.getElementById(id);
+const loadingOverlay = createLoadingOverlayController(getLoadingElement());
 let loadingCounter = 0;
 let lastErrorMessage = '';
 function showLoading(on) {
   const el = $('loading');
-  if (!el) return;
+  if (el) {
+    loadingOverlay.attach(el);
+  }
   loadingCounter = Math.max(0, loadingCounter + (on ? 1 : -1));
-  el.style.display = loadingCounter > 0 ? 'flex' : 'none';
+  loadingOverlay.setCounter(loadingCounter);
+  if (!el) return;
   appMonitor.setGauge('ui.loadingCounter', loadingCounter);
 }
 function showError(msg) {
