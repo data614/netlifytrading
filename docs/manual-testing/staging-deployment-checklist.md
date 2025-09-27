@@ -29,6 +29,8 @@ Use this checklist to coordinate staging releases without disrupting the existin
 1. Deploy the build to the staging environment using the Netlify dashboard or CLI.
 2. Confirm deployment metadata (commit SHA, branch name, and timestamp) is documented in the release tracker.
 3. Share the staging URL with QA and stakeholders.
+4. Confirm the canonical staging domain <https://trade.goodhopecorp.com> points
+   to the freshly deployed build before announcing availability.
 
 ## 4. Final QA Pass
 

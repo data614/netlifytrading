@@ -18,7 +18,7 @@ teams can rely on the same interface while iterating in parallel.
 | Item | Details |
 | --- | --- |
 | Application build | `main` branch @ HEAD (`abcdef1`) |
-| Deployment target | Netlify Dev (`npm start`) |
+| Deployment target | Staging domain `https://trade.goodhopecorp.com` |
 | Browser | Chrome 121 on macOS Sonoma |
 | Network | Wired, low-latency corporate network |
 | Feature flags | Default |
@@ -29,10 +29,14 @@ teams can rely on the same interface while iterating in parallel.
 
 ## Preconditions
 
-1. Launch `npm start` to boot the Netlify development server.
-2. Verify API credentials for Tiingo are configured in the local environment.
-3. Open `http://localhost:8888` in the browser.
-4. Ensure local storage is clear so the default watchlist loads.
+1. Open `https://trade.goodhopecorp.com` in the browser and verify the
+   navigation shell renders without console warnings. (If the staging domain is
+   inaccessible, document the outage and execute the fallback plan with
+   `npm start`.)
+2. Confirm the Tiingo-backed widgets display live data by observing the market
+   movers badge source indicator.
+3. Clear local storage so the default watchlist loads and avoids stale QA
+   residues.
 
 ## Test Steps & Results
 

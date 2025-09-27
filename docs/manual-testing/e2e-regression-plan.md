@@ -7,8 +7,10 @@ the browser interface exactly as designed today.
 
 ## 1. Global Smoke Checks
 
-1. Launch the development server (`npm start`) and confirm it compiles without
-   warnings.
+1. Load the staged build at <https://trade.goodhopecorp.com> and confirm the
+   landing page renders without console errors. (If the hosted environment is
+   unavailable, fall back to `npm start` locally and note the deviation in the
+   test log.)
 2. From the landing page (`/index.html`) validate that the navigation links
    open the following experiences in dedicated tabs:
    - AI Analyst (`/ai-analyst.html`)
