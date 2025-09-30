@@ -3,13 +3,6 @@
 .env.*
 !.env.example
 
-# Test files that might contain secrets
-debug-*.mjs
-test-*.mjs
-*-test.js
-test-*.js
-TIINGO_VERIFICATION.md
-
 # Node
 node_modules/
 npm-debug.log*

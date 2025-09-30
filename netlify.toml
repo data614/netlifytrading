@@ -36,12 +36,7 @@
     ".env.example",
     "scripts/local/*",
     "tests/fixtures/*",
-    "README.md", # TEMP: remove once README is redacted
-    "TIINGO_VERIFICATION.md",
-    "debug-tiingo-connection.mjs",
-    "test-token-detection.mjs",
-    "*.mjs",  # Exclude all test files
-    "test-*.js"  # Exclude all test files
+    "README.md" # TEMP: remove once README is redacted
   ]
 
 # SPA + Functions routing
