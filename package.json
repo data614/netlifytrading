@@ -4,8 +4,11 @@
   "type": "module",
   "scripts": {
     "clean": "rimraf build",
-    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data",
-    "start": "npx netlify-cli@latest dev",
+    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css style.css api-test.html _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data && shx cp -r professional build/professional && shx cp ai-analyst.html ai-analyst.js ai-analyst.css ai-analyst-batch-table.js quant-screener.html quant-screener.js valuation-lab.html professional-desk.html build/",
+    "start": "netlify dev",
+    "dev": "netlify dev",
+    "dev:live": "netlify dev --live",
+    "api-test": "node scripts/run-api-test.mjs",
     "generate:symbols": "node scripts/build-symbols.mjs",
     "peer-review:inventory": "node scripts/peer-review/generate-file-inventory.mjs",
     "qa:conflicts": "node scripts/qa/check-merge-conflicts.mjs",
@@ -18,12 +21,11 @@
     "csv-parse": "^5.5.6",
     "jsdom": "^27.0.0",
     "netlify-cli": "^23.7.2",
+    "node-fetch": "^3.3.2",
+    "open": "^10.2.0",
     "rimraf": "^6.0.1",
     "shx": "^0.4.0",
     "vitest": "^3.2.4",
     "xlsx": "^0.18.5"
-  },
-  "dependencies": {
-    "node-fetch": "^3.3.2"
   }
 }
