@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "clean": "rimraf build",
-    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data",
+    "build": "npm run clean && shx mkdir -p build/netlify/functions && shx cp index.html app.js app.css style.css api-test.html _redirects build/ && shx cp -r netlify/functions build/netlify/functions && shx cp -r data build/data && shx cp -r professional build/professional && shx cp ai-analyst.html ai-analyst.js ai-analyst.css ai-analyst-batch-table.js quant-screener.html quant-screener.js valuation-lab.html professional-desk.html nav.css build/",
     "start": "npx netlify-cli@latest dev",
     "generate:symbols": "node scripts/build-symbols.mjs",
     "peer-review:inventory": "node scripts/peer-review/generate-file-inventory.mjs",
