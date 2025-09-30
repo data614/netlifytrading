@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getTiingoToken, TIINGO_TOKEN_ENV_KEYS } from './lib/env.js';
+import { getTiingoToken, getTiingoTokenDetail, TIINGO_TOKEN_CANDIDATE_KEYS } from './lib/env.js';
 import { createCache } from './lib/cache.js';
 import buildValuationSnapshot, { summarizeValuationNarrative, valuationUtils } from './lib/valuation.js';
 import { logError } from './lib/security.js';
@@ -23,8 +23,8 @@ const DOCUMENT_LIMIT = 10;
 const FUNDAMENTAL_LIMIT = 4;
 const ACTION_LOOKBACK_DAYS = 365 * 2;
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MOCK_DATA_DIR = join(__dirname, '../..', 'data', 'tiingo-mock');
+// Use process.cwd() for better compatibility across bundlers
+const MOCK_DATA_DIR = join(process.cwd(), 'data', 'tiingo-mock');
 const FALLBACK_SYMBOL = 'GENERIC';
 const mockCache = new Map();
 const tiingoResponseCache = createCache({ ttl: 60_000, maxEntries: 400 });
@@ -316,7 +316,6 @@ const buildTiingoCacheKey = (path, params, token) => `${path}::${normaliseParams
 async function tiingo(path, params, token, options = {}) {
   const { cacheTtl, forceRefresh } = options || {};
   const url = new URL(path, API_BASE);
-  url.searchParams.set('token', token);
 
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== '') {
@@ -335,18 +334,26 @@ async function tiingo(path, params, token, options = {}) {
   }
 
   const loader = async () => {
-    const response = await fetch(url);
+    // Use Authorization header method
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Token ${token}`
+    };
+    
+    const response = await fetch(url, { headers });
     const text = await response.text();
     let data = null;
 
+    // Parse the response data
     if (text) {
       try {
         data = JSON.parse(text);
       } catch {
-        // Ignore JSON parsing errors for non-JSON responses.
+        // Ignore JSON parsing errors for non-JSON responses
       }
     }
 
+    // Throw error if the response was not successful
     if (!response.ok) {
       const message = (data && (data.message || data.error || data.detail)) || text || response.statusText;
       throw new Error(`Tiingo ${response.status}: ${String(message).slice(0, 200)}`);
@@ -363,13 +370,12 @@ async function tiingo(path, params, token, options = {}) {
  * @returns {object} Headers with token information.
  */
 function metaHeaders() {
-  const chosenKey = TIINGO_TOKEN_ENV_KEYS.find((k) => typeof process.env?.[k] === 'string' && process.env[k].trim());
-  const token = getTiingoToken();
-  const preview = token ? `${token.slice(0, 4)}...${token.slice(-4)}` : '';
-  return {
-    'x-tiingo-chosen-key': chosenKey || '',
-    'x-tiingo-token-preview': preview,
-  };
+    const { key, token } = getTiingoTokenDetail();
+    const preview = token ? `${token.slice(0, 4)}...${token.slice(-4)}` : 'not-found';
+    return {
+        'x-tiingo-chosen-key': key || '',
+        'x-tiingo-token-preview': preview,
+    };
 }
 
 /** Merge `meta` onto the body with a normalized `source` flag. */
@@ -465,7 +471,7 @@ export async function loadIntraday(symbol, interval, limit, token) {
   const count = Math.max(Number(limit) || DEFAULT_INTRADAY_POINTS, 1);
   const stepMins = freq === '30min' ? 30 : freq === '1hour' ? 60 : 5;
   const lookbackMins = stepMins * (count + 12); // Add buffer
-  const startDate = new Date(Date.now() - lookbackMins * 60 * 1000).toISOString();
+  const startDate = new Date(Date.now() - lookbackMins * 60 * 1000).toISOString().slice(0, 10); // Format as YYYY-MM-DD
 
   const rows = await tiingo(
     `/iex/${encodeURIComponent(symbol)}/prices`,
@@ -961,12 +967,15 @@ async function handleTiingoRequest(request) {
   const interval = url.searchParams.get('interval') || '';
   const limit = Number(url.searchParams.get('limit')) || DEFAULT_EOD_POINTS;
 
-  const token = getTiingoToken();
+  const tokenDetail = getTiingoTokenDetail();
+  const token = tokenDetail.token;
+  
   if (!token) {
-    console.warn(`[tiingo] ${symbol}(${kind}): no Tiingo token found. Checked keys: ${TIINGO_TOKEN_ENV_KEYS.join(', ')}`);
+    const warning = 'Tiingo API key not found. Checked standard env vars, all env vars for token-like values, and env var names.';
+    console.warn(`[tiingo] ${symbol}(${kind}): ${warning}. Candidate keys: ${TIINGO_TOKEN_CANDIDATE_KEYS.join(', ')}`);
     return respondWithMock(kind, symbol, limit, 'Tiingo API key missing. Showing sample data.', {
       reason: 'missing_token',
-      envKeysChecked: TIINGO_TOKEN_ENV_KEYS,
+      envKeysChecked: TIINGO_TOKEN_CANDIDATE_KEYS,
     });
   }
 

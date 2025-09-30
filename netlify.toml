@@ -6,6 +6,10 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+[functions."*"]
+  node_version = "22"
+  format = "esm"
+
 # ✅ Secrets scanning configuration
 [secrets_scan]
   enabled = true
@@ -36,6 +40,11 @@
   ]
 
 # SPA + Functions routing
+[[redirects]]
+  from = "/api-test"
+  to = "/api-test.html"
+  status = 200
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"

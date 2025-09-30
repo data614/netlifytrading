@@ -1,51 +1,77 @@
-export const TIINGO_TOKEN_ENV_KEYS = [
-  'TIINGO_KEY',
-  'TIINGO_API_KEY',
-  'TIINGO_TOKEN',
-  'TIINGO_ACCESS_TOKEN',
-  'REACT_APP_TIINGO_KEY',
-  'REACT_APP_TIINGO_TOKEN',
-  'REACT_APP_API_KEY',
+const TIINGO_TOKEN_CANDIDATE_KEYS = [
+    // Common server-side names
+    "TIINGO_KEY",
+    "TIINGO_API_KEY",
+    "TIINGO_TOKEN",
+    "TIINGO_API_TOKEN",
+    "TIINGO_ACCESS_TOKEN",
+
+    // Create React App style
+    "REACT_APP_TIINGO_TOKEN",
+    "REACT_APP_TIINGO_API_KEY",
+    "REACT_APP_TIINGO_KEY",
+
+    // Gatsby & Next.js style
+    "GATSBY_TIINGO_TOKEN",
+    "GATSBY_TIINGO_KEY",
+    "NEXT_PUBLIC_TIINGO_TOKEN",
+    "NEXT_PUBLIC_TIINGO_API_KEY",
+
+    // Vite style
+    "VITE_TIINGO_TOKEN",
+    "VITE_TIINGO_API_KEY",
+    "VITE_TIINGO_KEY",
 ];
 
-const readEnvValue = (key) => {
-  const raw = process.env?.[key];
-  if (typeof raw !== 'string') return '';
-  const trimmed = raw.trim();
-  return trimmed ? trimmed : '';
+const isTokenLike = (value) => {
+    if (typeof value !== 'string') {
+        return false;
+    }
+    return value.length >= 24 && value.length <= 64 && /^[a-zA-Z0-9]+$/.test(value);
 };
 
-const looksLikeToken = (v) => {
-  if (typeof v !== 'string') return false;
-  const s = v.trim();
-  if (!s) return false;
-  if (/^(true|false)$/i.test(s)) return false;
-  // Tiingo tokens are typically long hex strings; accept 24-64 hex/alnum
-  return /^[a-f0-9]{24,64}$/i.test(s);
+const getTiingoTokenDetail = () => {
+    const allKeys = [...TIINGO_TOKEN_CANDIDATE_KEYS, ...TIINGO_TOKEN_CANDIDATE_KEYS.map(k => k.toLowerCase())];
+
+    // 1. Check preferred keys
+    for (const key of allKeys) {
+        if (process.env[key]) {
+            return { token: process.env[key], key, reason: "found in standard env var" };
+        }
+    }
+
+    // 2. Scan all environment variable values
+    for (const [key, value] of Object.entries(process.env)) {
+        if (isTokenLike(value)) {
+            return { token: value, key, reason: "found by scanning env var values" };
+        }
+    }
+
+    // 3. Check if a token was used as a key
+    for (const key of Object.keys(process.env)) {
+        if (isTokenLike(key)) {
+            return { token: key, key, reason: "found in env var name" };
+        }
+    }
+
+    return { token: null, key: null, reason: "not found" };
 };
 
-export const getTiingoTokenDetail = () => {
-  // 1) Preferred: first recognized key with a value that looks like a token
-  for (const key of TIINGO_TOKEN_ENV_KEYS) {
-    const value = readEnvValue(key);
-    if (looksLikeToken(value)) return { key, token: value };
-  }
-  // 2) Case-insensitive keys (common mistake on Linux/Netlify)
-  for (const key of TIINGO_TOKEN_ENV_KEYS) {
-    const value = readEnvValue(key.toLowerCase());
-    if (looksLikeToken(value)) return { key: key.toLowerCase(), token: value };
-  }
-  // 3) Scan all env values for a token-like value
-  for (const [k, v] of Object.entries(process.env || {})) {
-    if (looksLikeToken(v)) return { key: k, token: String(v).trim() };
-  }
-  // 4) Rare misconfig: token accidentally used as the env var NAME
-  for (const k of Object.keys(process.env || {})) {
-    if (looksLikeToken(k)) return { key: '(name-as-token)', token: k };
-  }
-  return { key: '', token: '' };
+const getTiingoToken = () => {
+    return getTiingoTokenDetail().token;
+}
+
+// Additional exports for compatibility with existing functions
+const TIINGO_TOKEN_ENV_KEYS = TIINGO_TOKEN_CANDIDATE_KEYS;
+
+const isEnvPresent = (key) => {
+    return typeof process.env[key] === 'string' && process.env[key].trim() !== '';
 };
 
-export const getTiingoToken = () => getTiingoTokenDetail().token;
-
-export const isEnvPresent = (key) => readEnvValue(key) !== '';
+export {
+    getTiingoToken,
+    getTiingoTokenDetail,
+    TIINGO_TOKEN_CANDIDATE_KEYS,
+    TIINGO_TOKEN_ENV_KEYS,
+    isEnvPresent
+};
